@@ -8,16 +8,16 @@ void main() {
     'platforms': ['android'],
   });
 
-  runApp(const CryptBridgeApp());
+  runApp(const VaultExplorerApp());
 }
 
-class CryptBridgeApp extends StatelessWidget {
-  const CryptBridgeApp({Key? key}) : super(key: key);
+class VaultExplorerApp extends StatelessWidget {
+  const VaultExplorerApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'CryptBridge',
+      title: 'VaultExplorer',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       home: const VaultDashboard(),

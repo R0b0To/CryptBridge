@@ -1,8 +1,8 @@
-package com.example.cryptbridge
+package com.aeidolon.vaultexplorer
 
 object VeraCryptEngine {
     init {
-        System.loadLibrary("cryptbridge")
+        System.loadLibrary("vaultexplorer")
     }
 
     @JvmStatic

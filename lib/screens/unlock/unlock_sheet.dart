@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../services/cryptbridge_api.dart';
+import '../../services/vaultexplorer_api.dart';
 import '../../services/saved_containers.dart';
 import '../../models/mounted_container.dart';
 
@@ -42,7 +42,7 @@ class _UnlockSheetState extends State<UnlockSheet> {
 
   Future<void> _pickFile() async {
     try {
-      final result = await CryptBridgeApi.pickContainer();
+      final result = await vaultexplorerApi.pickContainer();
       if (result != null) {
         setState(() {
           _selectedUri = result.uri;
@@ -75,7 +75,7 @@ class _UnlockSheetState extends State<UnlockSheet> {
           _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0;
       final name = _selectedName ?? 'Container';
 
-      final result = await CryptBridgeApi.unlockContainer(
+      final result = await vaultexplorerApi.unlockContainer(
         _selectedUri!,
         _passwordCtrl.text,
         pim,
@@ -97,7 +97,7 @@ class _UnlockSheetState extends State<UnlockSheet> {
           freeSpace: 0,
         );
 
-        final space = await CryptBridgeApi.getSpaceInfo(tempContainer);
+        final space = await vaultexplorerApi.getSpaceInfo(tempContainer);
         final total =
             (space != null && space.isNotEmpty) ? space[0] : 0;
         final free =

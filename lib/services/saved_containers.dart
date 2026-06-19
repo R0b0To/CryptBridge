@@ -1,8 +1,3 @@
-// [FIX] Replaced hardcoded '/data/data/com.example.cryptbridge/files/...' path with
-// path_provider's getApplicationDocumentsDirectory(). The old path was non-portable
-// and would silently fail on any device where the package name differs or the
-// directory doesn't pre-exist.
-
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';

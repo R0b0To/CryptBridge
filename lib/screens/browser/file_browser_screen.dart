@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../models/mounted_container.dart';
-import '../../services/cryptbridge_api.dart';
+import '../../services/vaultexplorer_api.dart';
 import 'widgets/breadcrumb_bar.dart';
 import 'media_viewer_screen.dart';
 
@@ -51,8 +51,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   Future<void> _loadDirectoryContents(String path) async {
     setState(() => _isLoading = true);
     try {
-      final items = await CryptBridgeApi.listDirectory(widget.container, path);
-      final space = await CryptBridgeApi.getSpaceInfo(widget.container);
+      final items = await vaultexplorerApi.listDirectory(widget.container, path);
+      final space = await vaultexplorerApi.getSpaceInfo(widget.container);
       if (mounted) {
         setState(() {
           _currentItems = items ?? [];
@@ -135,16 +135,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         if (srcPath == destPath) continue;
 
         if (_isCutOperation) {
-          await CryptBridgeApi.renameFile(widget.container, srcPath, destPath);
+          await vaultexplorerApi.renameFile(widget.container, srcPath, destPath);
         } else {
           // [FIX] Unique temp name per file; always cleaned up in finally.
           final tempFile = File(
               '${tmpDir.path}/cb_copy_${DateTime.now().microsecondsSinceEpoch}');
           try {
-            final ok = await CryptBridgeApi.decryptFile(
+            final ok = await vaultexplorerApi.decryptFile(
                 widget.container, srcPath, tempFile.path);
             if (ok) {
-              await CryptBridgeApi.writeBackFile(
+              await vaultexplorerApi.writeBackFile(
                   widget.container, destPath, tempFile.path);
             }
           } finally {
@@ -208,7 +208,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   Future<void> _openFileWithApp(String cleanName, String fullPath) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final ok = await CryptBridgeApi.openWithApp(widget.container, fullPath);
+      final ok = await vaultexplorerApi.openWithApp(widget.container, fullPath);
       if (!ok && mounted) {
         messenger.showSnackBar(const SnackBar(
           content: Text('No app found that can open this file type'),
@@ -247,7 +247,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               final full = _pathStack.last.fatPath.isEmpty
                   ? name
                   : '${_pathStack.last.fatPath}/$name';
-              if (await CryptBridgeApi.createDirectory(widget.container, full)) {
+              if (await vaultexplorerApi.createDirectory(widget.container, full)) {
                 _loadDirectoryContents(_pathStack.last.fatPath);
               }
             },
@@ -277,7 +277,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               final full = _pathStack.last.fatPath.isEmpty
                   ? name
                   : '${_pathStack.last.fatPath}/$name';
-              if (await CryptBridgeApi.createEmptyFile(widget.container, full)) {
+              if (await vaultexplorerApi.createEmptyFile(widget.container, full)) {
                 _loadDirectoryContents(_pathStack.last.fatPath);
               }
             },
@@ -305,7 +305,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               final dir = _pathStack.last.fatPath;
               final oldFull = dir.isEmpty ? oldName : '$dir/$oldName';
               final newFull = dir.isEmpty ? newName : '$dir/$newName';
-              if (await CryptBridgeApi.renameFile(widget.container, oldFull, newFull)) {
+              if (await vaultexplorerApi.renameFile(widget.container, oldFull, newFull)) {
                 _loadDirectoryContents(dir);
               }
             },
@@ -320,7 +320,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final currentDir = _pathStack.last.fatPath;
     setState(() => _isLoading = true);
     try {
-      if (await CryptBridgeApi.importFile(widget.container, currentDir)) {
+      if (await vaultexplorerApi.importFile(widget.container, currentDir)) {
         _loadDirectoryContents(currentDir);
       }
     } catch (e) {
@@ -338,7 +338,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(SnackBar(content: Text('Preparing export for $cleanName…')));
     try {
-      final ok = await CryptBridgeApi.exportFileToStorage(widget.container, fullPath);
+      final ok = await vaultexplorerApi.exportFileToStorage(widget.container, fullPath);
       messenger.showSnackBar(SnackBar(
         content: Text(ok ? 'Exported $cleanName' : 'Export cancelled or failed'),
         backgroundColor: ok ? const Color(0xFF1A3A2A) : null,
@@ -370,7 +370,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   final isDir = item.startsWith('[DIR] ');
                   final name = isDir ? item.replaceFirst('[DIR] ', '') : item.split('|').first;
                   final full = currentDir.isEmpty ? name : '$currentDir/$name';
-                  await CryptBridgeApi.deleteFile(widget.container, full);
+                  await vaultexplorerApi.deleteFile(widget.container, full);
                 }
               } finally {
                 _exitSelectionMode();
@@ -506,7 +506,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               final name = raw.split('|').first;
               final path = _pathStack.last.fatPath.isEmpty ? name : '${_pathStack.last.fatPath}/$name';
               if (val == 'open_with') {
-                CryptBridgeApi.openWithApp(widget.container, path);
+                vaultexplorerApi.openWithApp(widget.container, path);
                 _exitSelectionMode();
               } else if (val == 'export') {
                 _exportFileToStorage(name, path);

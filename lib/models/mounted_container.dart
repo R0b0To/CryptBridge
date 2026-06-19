@@ -6,8 +6,8 @@ class MountedContainer {
   final int pim;
   final List<String> rootFiles;
   final DateTime mountedAt;
-  final int totalSpace; // Added
-  final int freeSpace;  // Added
+  final int totalSpace;
+  final int freeSpace;
 
   const MountedContainer({
     required this.uri,

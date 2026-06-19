@@ -1,12 +1,11 @@
 
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/mounted_container.dart';
 
-class CryptBridgeApi {
-  static const _channel = MethodChannel('com.example.cryptbridge/engine');
+class vaultexplorerApi {
+  static const _channel = MethodChannel('com.aeidolon.vaultexplorer/engine');
 
   static Future<({String uri, String displayName})?> pickContainer() async {
     final raw = await _channel.invokeMethod<Map<Object?, Object?>>('pickContainer');

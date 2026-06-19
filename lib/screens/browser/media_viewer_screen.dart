@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; 
 import 'package:video_player/video_player.dart';
 import '../../models/mounted_container.dart';
-import '../../services/cryptbridge_api.dart';
+import '../../services/vaultexplorer_api.dart';
 
 class MediaViewerScreen extends StatefulWidget {
   final MountedContainer container;
@@ -94,7 +94,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   Future<List<String>> _scanDirectoryRecursively(String baseDir) async {
     List<String> foundFiles = [];
     try {
-      final items = await CryptBridgeApi.listDirectory(widget.container, baseDir);
+      final items = await vaultexplorerApi.listDirectory(widget.container, baseDir);
       if (items != null) {
         for (final item in items) {
           if (item.startsWith('[DIR] ')) {
@@ -227,7 +227,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   Future<void> _openWithApp() async {
     final currentFile = _currentPlaylist[_currentIndex];
     try {
-      await CryptBridgeApi.openWithApp(widget.container, currentFile);
+      await vaultexplorerApi.openWithApp(widget.container, currentFile);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -270,7 +270,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       bool success = false;
 
       try {
-        success = await CryptBridgeApi.deleteFile(widget.container, currentFile);
+        success = await vaultexplorerApi.deleteFile(widget.container, currentFile);
       } catch (e) {
         debugPrint("Error executing API deletion: $e");
       }
@@ -314,7 +314,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     );
 
     try {
-      final success = await CryptBridgeApi.decryptFile(
+      final success = await vaultexplorerApi.decryptFile(
         widget.container,
         fileName,
         destPath,
@@ -1278,7 +1278,7 @@ class _LocalStreamingServer {
         return;
       }
 
-      final fileSize = await CryptBridgeApi.getFileSize(container, fileName);
+      final fileSize = await vaultexplorerApi.getFileSize(container, fileName);
       if (fileSize <= 0) {
         request.response.statusCode = HttpStatus.notFound;
         await request.response.close();
@@ -1314,7 +1314,7 @@ class _LocalStreamingServer {
           final remaining = end - currentPosition + 1;
           final currentChunkSize = remaining < chunkSize ? remaining : chunkSize;
 
-          final bytes = await CryptBridgeApi.readFileChunk(
+          final bytes = await vaultexplorerApi.readFileChunk(
             container,
             fileName,
             currentPosition,
@@ -1339,7 +1339,7 @@ class _LocalStreamingServer {
           final remaining = fileSize - currentPosition;
           final currentChunkSize = remaining < chunkSize ? remaining : chunkSize;
 
-          final bytes = await CryptBridgeApi.readFileChunk(
+          final bytes = await vaultexplorerApi.readFileChunk(
             container,
             fileName,
             currentPosition,

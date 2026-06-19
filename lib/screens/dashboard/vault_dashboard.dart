@@ -43,7 +43,7 @@ class _VaultDashboardState extends State<VaultDashboard> {
           children: [
             Icon(Icons.lock_outline, size: 16, color: cs.primary),
             const SizedBox(width: 8),
-            const Text('CryptBridge'),
+            const Text('vaultexplorer'),
           ],
         ),
         actions: [

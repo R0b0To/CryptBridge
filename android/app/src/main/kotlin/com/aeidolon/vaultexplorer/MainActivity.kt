@@ -1,4 +1,4 @@
-package com.example.cryptbridge
+package com.aeidolon.vaultexplorer
 
 import android.app.Activity
 import android.content.Intent
@@ -12,7 +12,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.example.cryptbridge/engine"
+    private val CHANNEL = "com.aeidolon.vaultexplorer/engine"
     private val PICK_CONTAINER_REQUEST = 1001
     private val IMPORT_FILE_REQUEST = 1002
     private val EXPORT_FILE_REQUEST = 1003
@@ -88,7 +88,7 @@ class MainActivity : FlutterActivity() {
                                             displayName     = displayName
                                         )
                                         val rootsUri = DocumentsContract.buildRootsUri(
-                                            "com.example.cryptbridge.documents")
+                                            "com.aeidolon.vaultexplorer.documents")
                                         contentResolver.notifyChange(rootsUri, null)
                                         result.success(mapOf(
                                             "volId" to targetVolId,
@@ -118,7 +118,7 @@ class MainActivity : FlutterActivity() {
                             }
                             VeraCryptSession.removeSession(volId)
                             val rootsUri = DocumentsContract.buildRootsUri(
-                                "com.example.cryptbridge.documents")
+                                "com.aeidolon.vaultexplorer.documents")
                             contentResolver.notifyChange(rootsUri, null)
                             result.success(true)
                         } else {
@@ -365,7 +365,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             val volId     = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
                             val docUri    = DocumentsContract.buildDocumentUri(
-                                "com.example.cryptbridge.documents", "$volId:file:$fileName")
+                                "com.aeidolon.vaultexplorer.documents", "$volId:file:$fileName")
                             val intent    = Intent(Intent.ACTION_VIEW).apply {
                                 setDataAndType(docUri, getMimeType(fileName))
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or

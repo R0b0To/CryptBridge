@@ -1,22 +1,3 @@
-// FIXES applied in this revision:
-//
-// [FIX 1] Correct sector-count for GET_SECTOR_COUNT ioctl.
-//   The old code always returned 1000000 (hard-coded to ~500 MB), making
-//   f_getfree() return wrong free-space values for any container that was not
-//   exactly that size.  The fix stores the real file size in prepareSession()
-//   via fstat() and uses it in disk_ioctl(GET_SECTOR_COUNT).
-//
-// [FIX 2] unlockAndListNative: return nullptr on FAT mount failure.
-//   Previously a mount failure returned a one-element array containing the
-//   string "Error: Mount failed." which the Kotlin layer treated as a
-//   successfully unlocked container with one oddly-named file.  Now nullptr
-//   is returned so the caller issues AUTH_FAIL as intended.
-//
-// [FIX 3] lockNative: clear the stored file size for the released slot so
-//   stale data cannot leak into a future mount.
-//
-// [STYLE] Consolidated redundant cast patterns; no logic changes elsewhere.
-
 #include <jni.h>
 #include <string>
 #include <fstream>
@@ -26,7 +7,7 @@
 #include <sstream>
 #include <cstring>
 #include <unistd.h>
-#include <sys/stat.h>        // [FIX 1] fstat
+#include <sys/stat.h>        
 #include <memory>
 #include <algorithm>
 
@@ -37,7 +18,7 @@
 #include "ff.h"
 #include "diskio.h"
 
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "CryptBridge_C++", __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "VaultExplorer_C++", __VA_ARGS__)
 #define MAX_VOLUMES 4
 
 // ----------------------------------------------------------------====
@@ -363,7 +344,7 @@ static jobjectArray buildDirectoryListing(JNIEnv* env, int volId, const char* pa
 // ----------------------------------------------------------------====
 
 extern "C" JNIEXPORT jobjectArray JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_unlockAndListNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_unlockAndListNative(
         JNIEnv* env, jobject, jint fd, jstring password, jint pim, jint volId) {
 
     const char* nativePass = env->GetStringUTFChars(password, nullptr);
@@ -392,7 +373,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_unlockAndListNative(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_unlockAndExtractNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_unlockAndExtractNative(
         JNIEnv* env, jobject,
         jint fd, jstring password, jint pim,
         jstring targetFileName, jstring destPath, jint volId) {
@@ -429,7 +410,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_unlockAndExtractNative(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_writeBackFileNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_writeBackFileNative(
         JNIEnv* env, jobject,
         jint fd, jstring password, jint pim,
         jstring targetFileName, jstring sourcePath, jint volId) {
@@ -469,7 +450,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_writeBackFileNative(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_deleteFileNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_deleteFileNative(
         JNIEnv* env, jobject,
         jint fd, jstring password, jint pim,
         jstring targetFileName, jint volId) {
@@ -493,7 +474,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_deleteFileNative(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_lockNative(JNIEnv*, jobject, jint volId) {
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_lockNative(JNIEnv*, jobject, jint volId) {
     if (volId >= MAX_VOLUMES) return;
 
     activeFd[volId]         = -1;
@@ -511,7 +492,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_lockNative(JNIEnv*, jobject, jint v
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_getFileSizeNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_getFileSizeNative(
         JNIEnv* env, jobject,
         jint fd, jstring password, jint pim,
         jstring targetFileName, jint volId) {
@@ -539,7 +520,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_getFileSizeNative(
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_readFileChunkNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_readFileChunkNative(
         JNIEnv* env, jobject,
         jint fd, jstring password, jint pim,
         jstring targetFileName, jlong offset, jint length, jint volId) {
@@ -574,7 +555,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_readFileChunkNative(
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_listDirectoryNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_listDirectoryNative(
         JNIEnv* env, jobject,
         jint fd, jstring password, jint pim, jstring dirPath, jint volId) {
 
@@ -596,7 +577,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_listDirectoryNative(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_createDirectoryNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createDirectoryNative(
         JNIEnv* env, jobject,
         jint fd, jstring password, jint pim, jstring dirPath, jint volId) {
 
@@ -619,7 +600,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_createDirectoryNative(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_renameFileNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_renameFileNative(
         JNIEnv* env, jobject,
         jint fd, jstring password, jint pim,
         jstring oldPath, jstring newPath, jint volId) {
@@ -646,7 +627,7 @@ Java_com_example_cryptbridge_VeraCryptEngine_renameFileNative(
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
-Java_com_example_cryptbridge_VeraCryptEngine_getSpaceInfoNative(
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_getSpaceInfoNative(
         JNIEnv* env, jobject,
         jint fd, jstring password, jint pim, jint volId) {
 

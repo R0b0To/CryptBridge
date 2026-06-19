@@ -1,12 +1,6 @@
-// [IMPROVEMENT] Added a storage usage progress bar with color feedback:
-//   green  < 70 % used
-//   amber  70–90 % used
-//   red    > 90 % used
-// This makes available space immediately scannable without reading numbers.
-
 import 'package:flutter/material.dart';
 import '../../../models/mounted_container.dart';
-import '../../../services/cryptbridge_api.dart';
+import '../../../services/vaultexplorer_api.dart';
 import '../../browser/file_browser_screen.dart';
 
 class ContainerCard extends StatelessWidget {
@@ -198,7 +192,7 @@ class _LockButtonState extends State<_LockButton> {
   Future<void> _lock() async {
     setState(() => _loading = true);
     try {
-      await CryptBridgeApi.lockContainer(widget.container.uri);
+      await vaultexplorerApi.lockContainer(widget.container.uri);
       widget.onLocked(widget.container.volId);
     } catch (e) {
       if (mounted) {

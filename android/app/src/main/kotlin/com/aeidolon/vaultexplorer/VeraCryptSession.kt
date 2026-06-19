@@ -1,4 +1,4 @@
-package com.example.cryptbridge
+package com.aeidolon.vaultexplorer
 
 data class ContainerSession(
     val uri: String,

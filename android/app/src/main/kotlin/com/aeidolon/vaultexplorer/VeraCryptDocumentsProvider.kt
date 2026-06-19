@@ -1,4 +1,4 @@
-package com.example.cryptbridge
+package com.aeidolon.vaultexplorer
 
 import android.content.res.AssetFileDescriptor
 import android.database.Cursor
@@ -111,7 +111,7 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         VeraCryptEngine.lockNative(volId)
         VeraCryptSession.removeSession(volId)
         
-        val rootsUri = DocumentsContract.buildRootsUri("com.example.cryptbridge.documents")
+        val rootsUri = DocumentsContract.buildRootsUri("com.aeidolon.vaultexplorer.documents")
         context?.contentResolver?.notifyChange(rootsUri, null)
     }
 
@@ -127,7 +127,7 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
 
         val isDir = type == "dir"
         val displayName = if (fatPath.isEmpty()) {
-            "CryptBridge Root $volId"
+            "vaultexplorer Root $volId"
         } else {
             fatPath.substringAfterLast("/")
         }
@@ -228,7 +228,7 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("CryptBridge_Provider", "Failed query for $parentId: ${e.message}")
+            android.util.Log.e("vaultexplorer_Provider", "Failed query for $parentId: ${e.message}")
         }
         return cursor
     }
@@ -268,7 +268,7 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
 
         val childType = if (isDirectory) "dir" else "file"
         
-        val childrenUri = DocumentsContract.buildChildDocumentsUri("com.example.cryptbridge.documents", parentId)
+        val childrenUri = DocumentsContract.buildChildDocumentsUri("com.aeidolon.vaultexplorer.documents", parentId)
         context?.contentResolver?.notifyChange(childrenUri, null)
 
         return "$volId:$childType:$cleanPath"
@@ -291,7 +291,7 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         val parentPath = if (fatPath.contains("/")) fatPath.substringBeforeLast("/") else ""
         val parentId = "$volId:dir:$parentPath"
         
-        val childrenUri = DocumentsContract.buildChildDocumentsUri("com.example.cryptbridge.documents", parentId)
+        val childrenUri = DocumentsContract.buildChildDocumentsUri("com.aeidolon.vaultexplorer.documents", parentId)
         context?.contentResolver?.notifyChange(childrenUri, null)
     }
 

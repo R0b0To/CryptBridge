@@ -62,6 +62,7 @@ class FileTile extends StatelessWidget {
       case 'mov':
       case 'avi':
       case 'mkv':
+      case 'webm':
         return const Color(0xFF7E57C2);
       case 'mp3':
       case 'flac':
