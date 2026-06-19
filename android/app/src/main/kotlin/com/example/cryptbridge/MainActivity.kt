@@ -434,6 +434,7 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             uri.lastPathSegment ?: "Container"
         }
+    }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)

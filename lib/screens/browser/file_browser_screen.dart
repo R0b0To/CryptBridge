@@ -615,18 +615,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                               title: Text('Import File from Device'))),
                     ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                          color: cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(4)),
-                      child: Text('VOL ${widget.container.volId}',
-                          style: TextStyle(color: cs.primary, fontSize: 10,
-                              fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-                    ),
-                  ),
+                  
                 ],
               );
 
