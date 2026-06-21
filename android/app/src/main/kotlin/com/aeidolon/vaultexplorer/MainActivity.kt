@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.annotation.NonNull
+import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -21,6 +22,7 @@ class MainActivity : FlutterActivity() {
     private val IMPORT_FILE_REQUEST = 1002
     private val EXPORT_FILE_REQUEST = 1003
     private val CREATE_CONTAINER_REQUEST = 1004
+    private val EXPORT_FILES_TREE_REQUEST = 1006
     private var pendingFlutterResult: MethodChannel.Result? = null
 
     private var pendingImportContainerUri: String? = null
@@ -40,6 +42,14 @@ class MainActivity : FlutterActivity() {
     private var pendingCreatePassword: String? = null
     private var pendingCreatePim: Int = 0
     private var pendingCreateFileSystem: String? = null
+
+    
+
+private var pendingExportMultiContainerUri: String? = null
+private var pendingExportMultiSourcePaths: List<String>? = null
+private var pendingExportMultiPassword: String? = null
+private var pendingExportMultiPim: Int = 0
+private var pendingExportMultiVolId: Int = 0
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -442,20 +452,35 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
-                    "importFile" -> {
-                        pendingResultCheck(result)
-                        pendingImportContainerUri = call.argument<String>("filePath")
-                        pendingImportTargetName   = call.argument<String>("targetPath")
-                        pendingImportPassword     = call.argument<String>("password")
-                        pendingImportPim          = call.argument<Number>("pim")?.toInt() ?: 0
-                        pendingImportVolId        =
-                            VeraCryptSession.getVolumeIdByUri(pendingImportContainerUri!!) ?: 0
-                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
-                        }, IMPORT_FILE_REQUEST)
-                    }
+                    "importFile" -> {    
+            pendingResultCheck(result)
+            pendingImportContainerUri = call.argument<String>("filePath")
+            pendingImportTargetName   = call.argument<String>("targetPath")
+            pendingImportPassword     = call.argument<String>("password")
+            pendingImportPim          = call.argument<Number>("pim")?.toInt() ?: 0
+            pendingImportVolId        =
+        VeraCryptSession.getVolumeIdByUri(pendingImportContainerUri!!) ?: 0
+    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = "*/*"
+        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)   // ← new
+    }, IMPORT_FILE_REQUEST)
+}
 
-                    "exportFileToStorage" -> {
+"exportFilesToFolder" -> {
+    pendingResultCheck(result)
+    pendingExportMultiContainerUri = call.argument<String>("filePath")
+    pendingExportMultiSourcePaths  = (call.argument<List<*>>("sourcePaths"))?.map { it.toString() }
+    pendingExportMultiPassword     = call.argument<String>("password")
+    pendingExportMultiPim          = call.argument<Number>("pim")?.toInt() ?: 0
+    pendingExportMultiVolId        =
+        VeraCryptSession.getVolumeIdByUri(pendingExportMultiContainerUri!!) ?: 0
+    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), EXPORT_FILES_TREE_REQUEST)
+}
+
+
+                    "exportFileToStorage" -> 
+                    {
                         pendingResultCheck(result)
                         pendingExportContainerUri = call.argument<String>("filePath")
                         pendingExportSourcePath   = call.argument<String>("sourcePath")
@@ -472,7 +497,7 @@ class MainActivity : FlutterActivity() {
                     }
 
                     else -> result.notImplemented()
-                }
+        }
             }
     }
 
@@ -567,50 +592,108 @@ class MainActivity : FlutterActivity() {
 }
 
         if (requestCode == IMPORT_FILE_REQUEST) {
-            val res = pendingFlutterResult ?: return; pendingFlutterResult = null
-            if (resultCode == Activity.RESULT_OK && data?.data != null) {
-                val pickedUri    = data.data!!
-                val containerUri = pendingImportContainerUri
-                val targetDir    = pendingImportTargetName ?: ""
-                val password     = pendingImportPassword
-                val pim          = pendingImportPim
-                val volId        = pendingImportVolId
-                if (containerUri != null && password != null) {
-                    Thread {
-                        try {
-                            var displayName = "imported_file"
-                            contentResolver.query(pickedUri,
-                                arrayOf(OpenableColumns.DISPLAY_NAME),
-                                null, null, null)?.use { c ->
-                                if (c.moveToFirst()) {
-                                    val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                                    if (i != -1) displayName = c.getString(i)
-                                }
+    val res = pendingFlutterResult ?: return; pendingFlutterResult = null
+    if (resultCode == Activity.RESULT_OK && data != null) {
+        val uris = mutableListOf<Uri>()
+        data.clipData?.let { clip ->
+            for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+        } ?: data.data?.let { uris.add(it) }
+
+        val containerUri = pendingImportContainerUri
+        val targetDir    = pendingImportTargetName ?: ""
+        val password     = pendingImportPassword
+        val pim          = pendingImportPim
+        val volId        = pendingImportVolId
+
+        if (containerUri != null && password != null && uris.isNotEmpty()) {
+            Thread {
+                var successCount = 0
+                for (pickedUri in uris) {
+                    try {
+                        var displayName = "imported_file"
+                        contentResolver.query(pickedUri,
+                            arrayOf(OpenableColumns.DISPLAY_NAME),
+                            null, null, null)?.use { c ->
+                            if (c.moveToFirst()) {
+                                val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                                if (i != -1) displayName = c.getString(i)
                             }
-                            val targetName = if (targetDir.isEmpty()) displayName
-                                             else "$targetDir/$displayName"
-                            val tempFile = File(cacheDir, "import_temp")
-                            contentResolver.openInputStream(pickedUri)?.use { inp ->
-                                tempFile.outputStream().use { inp.copyTo(it) }
-                            }
-                            val pfd = contentResolver.openFileDescriptor(
-                                Uri.parse(containerUri), "rw")
-                                ?: throw Exception("Could not open fd")
-                            val success = synchronized(VeraCryptSession.locks[volId]) {
-                                VeraCryptEngine.writeBackFileNative(
-                                    pfd.detachFd(), password, pim,
-                                    targetName, tempFile.absolutePath, volId)
-                            }
-                            tempFile.delete()
-                            runOnUiThread { res.success(success) }
-                        } catch (e: Exception) {
-                            runOnUiThread { res.error("IMPORT_ERROR", e.message, null) }
                         }
-                    }.start()
-                } else res.success(false)
-            } else res.success(false)
-            return
-        }
+                        val targetName = if (targetDir.isEmpty()) displayName
+                                         else "$targetDir/$displayName"
+                        val tempFile = File(cacheDir, "import_${System.nanoTime()}")
+                        contentResolver.openInputStream(pickedUri)?.use { inp ->
+                            tempFile.outputStream().use { inp.copyTo(it) }
+                        }
+                        val pfd = contentResolver.openFileDescriptor(
+                            Uri.parse(containerUri), "rw") ?: continue
+                        val ok = synchronized(VeraCryptSession.locks[volId]) {
+                            VeraCryptEngine.writeBackFileNative(
+                                pfd.detachFd(), password, pim,
+                                targetName, tempFile.absolutePath, volId)
+                        }
+                        tempFile.delete()
+                        if (ok) successCount++
+                    } catch (e: Exception) {
+                        // skip this one, continue with the rest
+                    }
+                }
+                runOnUiThread { res.success(successCount) }
+            }.start()
+        } else res.success(0)
+    } else res.success(0)
+    return
+}
+
+if (requestCode == EXPORT_FILES_TREE_REQUEST) {
+    val res = pendingFlutterResult ?: return; pendingFlutterResult = null
+    if (resultCode == Activity.RESULT_OK && data?.data != null) {
+        val treeUri = data.data!!
+        contentResolver.takePersistableUriPermission(treeUri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+
+        val containerUri = pendingExportMultiContainerUri
+        val sourcePaths  = pendingExportMultiSourcePaths
+        val password     = pendingExportMultiPassword
+        val pim          = pendingExportMultiPim
+        val volId        = pendingExportMultiVolId
+
+        if (containerUri != null && sourcePaths != null && password != null) {
+            Thread {
+                var successCount = 0
+                val destTree = DocumentFile.fromTreeUri(this, treeUri)
+                for (sourcePath in sourcePaths) {
+                    try {
+                        val fileName = sourcePath.substringAfterLast("/")
+                        val tempFile = File(cacheDir, "export_${System.nanoTime()}")
+                        val pfd = contentResolver.openFileDescriptor(
+                            Uri.parse(containerUri), "r") ?: continue
+                        val ok = synchronized(VeraCryptSession.locks[volId]) {
+                            VeraCryptEngine.unlockAndExtractNative(
+                                pfd.detachFd(), password, pim,
+                                sourcePath, tempFile.absolutePath, volId)
+                        }
+                        if (ok && tempFile.exists()) {
+                            destTree?.findFile(fileName)?.delete() // overwrite if present
+                            val outDoc = destTree?.createFile(getMimeType(fileName), fileName)
+                            if (outDoc != null) {
+                                contentResolver.openOutputStream(outDoc.uri)?.use { out ->
+                                    tempFile.inputStream().use { it.copyTo(out) }
+                                }
+                                successCount++
+                            }
+                        }
+                        tempFile.delete()
+                    } catch (e: Exception) {
+                        // skip this one, continue with the rest
+                    }
+                }
+                runOnUiThread { res.success(successCount) }
+            }.start()
+        } else res.success(0)
+    } else res.success(0)
+    return
+}
 
         if (requestCode == EXPORT_FILE_REQUEST) {
             val res = pendingFlutterResult ?: return; pendingFlutterResult = null

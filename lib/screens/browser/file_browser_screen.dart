@@ -13,6 +13,8 @@ class PathSegment {
   const PathSegment(this.label, this.fatPath);
 }
 
+enum _SortBy { name, size, extension }
+
 class FileBrowserScreen extends StatefulWidget {
   final MountedContainer container;
   const FileBrowserScreen({Key? key, required this.container}) : super(key: key);
@@ -35,11 +37,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   bool _isCutOperation = false;
   List<String> _clipboardSourceFiles = [];
 
+  
+  
+
   @override
   void initState() {
     super.initState();
     _freeSpace = widget.container.freeSpace;
     _loadDirectoryContents('');
+    
   }
 
   bool get _atRoot => _pathStack.length == 1;
@@ -316,38 +322,65 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 
-  Future<void> _importFileFromDevice() async {
-    final currentDir = _pathStack.last.fatPath;
-    setState(() => _isLoading = true);
-    try {
-      if (await vaultexplorerApi.importFile(widget.container, currentDir)) {
-        _loadDirectoryContents(currentDir);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Import failed: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+Future<void> _exportSelectedToStorage() async {
+  final currentDir = _pathStack.last.fatPath;
+  final fileItems = _selectedItems.where((i) => !i.startsWith('[DIR] ')).toList();
+  final dirCount = _selectedItems.length - fileItems.length;
+
+  if (fileItems.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Select at least one file to export')),
+    );
+    return;
   }
 
-  Future<void> _exportFileToStorage(String cleanName, String fullPath) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(SnackBar(content: Text('Preparing export for $cleanName…')));
-    try {
-      final ok = await vaultexplorerApi.exportFileToStorage(widget.container, fullPath);
-      messenger.showSnackBar(SnackBar(
-        content: Text(ok ? 'Exported $cleanName' : 'Export cancelled or failed'),
-        backgroundColor: ok ? const Color(0xFF1A3A2A) : null,
-      ));
-    } catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
-    }
+  final paths = fileItems.map((item) {
+    final name = item.split('|').first;
+    return currentDir.isEmpty ? name : '$currentDir/$name';
+  }).toList();
+
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(SnackBar(content: Text('Preparing export for ${paths.length} item(s)…')));
+  setState(() => _isLoading = true);
+  try {
+    final count = await vaultexplorerApi.exportFilesToFolder(widget.container, paths);
+    var msg = count > 0 ? 'Exported $count file(s)' : 'Export cancelled or failed';
+    if (dirCount > 0) msg += ' ($dirCount folder(s) skipped)';
+    messenger.showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: count > 0 ? const Color(0xFF1A3A2A) : null,
+    ));
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+  _exitSelectionMode();
+}
+
+  Future<void> _importFilesFromDevice() async {
+  final currentDir = _pathStack.last.fatPath;
+  setState(() => _isLoading = true);
+  try {
+    final count = await vaultexplorerApi.importFiles(widget.container, currentDir);
+    if (count > 0) _loadDirectoryContents(currentDir);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(count > 0
+            ? 'Imported $count file${count != 1 ? 's' : ''}'
+            : 'No files imported')),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e'), backgroundColor: Colors.red),
+      );
+    }
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
+  }
+}
 
   Future<void> _batchDelete() async {
     final currentDir = _pathStack.last.fatPath;
@@ -383,7 +416,72 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
     );
   }
+  
+  // ---------------------------------------------------------------------------
+  // Sorting                                                    ← add this whole block
+  // ---------------------------------------------------------------------------
 
+  _SortBy _sortBy = _SortBy.name;
+  bool _sortAscending = true;
+
+  void _setSort(_SortBy by) {
+    setState(() {
+      if (_sortBy == by) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortBy = by;
+        _sortAscending = true;
+      }
+    });
+  }
+
+  int _compareItems(String a, String b) {
+    String nameOf(String raw) =>
+        raw.startsWith('[DIR] ') ? raw.replaceFirst('[DIR] ', '') : raw.split('|').first;
+    int sizeOf(String raw) {
+      if (raw.startsWith('[DIR] ')) return 0;
+      final p = raw.split('|');
+      return p.length > 1 ? int.tryParse(p[1]) ?? 0 : 0;
+    }
+
+    final aName = nameOf(a), bName = nameOf(b);
+    int result;
+    switch (_sortBy) {
+      case _SortBy.name:
+        result = aName.toLowerCase().compareTo(bName.toLowerCase());
+        break;
+      case _SortBy.size:
+        result = sizeOf(a).compareTo(sizeOf(b));
+        break;
+      case _SortBy.extension:
+        String extOf(String n) => n.contains('.') ? n.split('.').last.toLowerCase() : '';
+        result = extOf(aName).compareTo(extOf(bName));
+        if (result == 0) result = aName.toLowerCase().compareTo(bName.toLowerCase());
+        break;
+    }
+    return _sortAscending ? result : -result;
+  }
+
+  PopupMenuItem<_SortBy> _sortMenuItem(_SortBy value, String label) {
+    final cs = Theme.of(context).colorScheme;
+    final isActive = _sortBy == value;
+    return PopupMenuItem(
+      value: value,
+      child: Row(
+        children: [
+          Icon(
+            isActive
+                ? (_sortAscending ? Icons.arrow_upward : Icons.arrow_downward)
+                : Icons.sort,
+            size: 16,
+            color: isActive ? cs.primary : null,
+          ),
+          const SizedBox(width: 10),
+          Text(label, style: TextStyle(fontWeight: isActive ? FontWeight.w700 : FontWeight.normal)),
+        ],
+      ),
+    );
+  }
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
@@ -432,134 +530,110 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   // ---------------------------------------------------------------------------
   // AppBars
   // ---------------------------------------------------------------------------
+AppBar _buildSelectionAppBar(ColorScheme cs) {
+  final single     = _selectedItems.length == 1;
+  final singleDir  = single && _selectedItems.first.startsWith('[DIR] ');
+  final singleFile = single && !singleDir;
+  final hasFiles   = _selectedItems.any((i) => !i.startsWith('[DIR] '));
 
-  AppBar _buildSelectionAppBar(ColorScheme cs) {
-    final single    = _selectedItems.length == 1;
-    final singleDir = single && _selectedItems.first.startsWith('[DIR] ');
-    final singleFile = single && !singleDir;
-
-    return AppBar(
-      backgroundColor: cs.surfaceVariant,
-      elevation: 2,
-      leading: IconButton(
-        icon: const Icon(Icons.close, color: Colors.white),
-        onPressed: _exitSelectionMode,
-      ),
-      title: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          dropdownColor: cs.surface,
-          isExpanded: true,
-          value: 'header',
-          icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-          selectedItemBuilder: (_) => ['header', 'all', 'none']
-    .map<Widget>((_) => Center(
-          child: Text(
-            '${_selectedItems.length} selected',
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
+  return AppBar(
+    backgroundColor: cs.surface,
+    foregroundColor: cs.onSurface,
+    elevation: 0,
+    shape: Border(bottom: BorderSide(color: cs.primary.withOpacity(0.4))),
+    leading: IconButton(icon: const Icon(Icons.close), onPressed: _exitSelectionMode),
+    titleSpacing: 0,
+    title: Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: cs.primaryContainer,
+            borderRadius: BorderRadius.circular(20),
           ),
-        ))
-    .toList(),
-          items: const [
-            DropdownMenuItem(value: 'header',
-                child: Text('Selection', style: TextStyle(fontSize: 11, color: Colors.grey))),
-            DropdownMenuItem(value: 'all',
-                child: Text('Select All', style: TextStyle(fontSize: 13))),
-            DropdownMenuItem(value: 'none',
-                child: Text('Clear', style: TextStyle(fontSize: 13))),
-          ],
-          onChanged: (val) {
-            if (val == 'all') setState(() => _selectedItems.addAll(_currentItems));
-            else if (val == 'none') _exitSelectionMode();
+          child: Text('${_selectedItems.length}',
+              style: TextStyle(color: cs.primary, fontSize: 13, fontWeight: FontWeight.w700)),
+        ),
+        const SizedBox(width: 10),
+        const Text('selected', style: TextStyle(fontSize: 13)),
+        const Spacer(),
+        TextButton(
+          onPressed: () => setState(() => _selectedItems.addAll(_currentItems)),
+          child: const Text('All', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    ),
+    actions: [
+      if (single)
+        IconButton(
+          icon: const Icon(Icons.edit_outlined),
+          tooltip: 'Rename',
+          onPressed: () {
+            final raw = _selectedItems.first;
+            final isDir = raw.startsWith('[DIR] ');
+            final name = isDir ? raw.replaceFirst('[DIR] ', '') : raw.split('|').first;
+            _showRenameDialog(name);
+            _exitSelectionMode();
           },
         ),
+      IconButton(icon: const Icon(Icons.copy_outlined), tooltip: 'Copy',
+          onPressed: () => _initClipboard(cut: false)),
+      IconButton(icon: const Icon(Icons.cut_outlined), tooltip: 'Cut',
+          onPressed: () => _initClipboard(cut: true)),
+      if (hasFiles)
+        IconButton(icon: const Icon(Icons.drive_folder_upload_outlined), tooltip: 'Export',
+            onPressed: _exportSelectedToStorage),
+      IconButton(icon: Icon(Icons.delete_outline, color: cs.error), tooltip: 'Delete',
+          onPressed: _batchDelete),
+      if (singleFile)
+        IconButton(
+          icon: const Icon(Icons.open_in_new),
+          tooltip: 'Open with App',
+          onPressed: () {
+            final raw  = _selectedItems.first;
+            final name = raw.split('|').first;
+            final path = _pathStack.last.fatPath.isEmpty ? name : '${_pathStack.last.fatPath}/$name';
+            vaultexplorerApi.openWithApp(widget.container, path);
+            _exitSelectionMode();
+          },
+        ),
+      const SizedBox(width: 4),
+    ],
+  );
+}
+
+AppBar _buildClipboardAppBar(ColorScheme cs) => AppBar(
+      backgroundColor: cs.surface,
+      foregroundColor: cs.onSurface,
+      elevation: 0,
+      shape: Border(bottom: BorderSide(color: cs.primary.withOpacity(0.4))),
+      leading: IconButton(icon: const Icon(Icons.close), tooltip: 'Cancel', onPressed: _cancelClipboard),
+      title: Row(
+        children: [
+          Icon(_isCutOperation ? Icons.cut : Icons.copy, size: 16, color: cs.primary),
+          const SizedBox(width: 8),
+          Text(
+            _isCutOperation
+                ? 'Moving ${_clipboardSourceFiles.length} item(s)'
+                : 'Copying ${_clipboardSourceFiles.length} item(s)',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
       actions: [
-        if (single)
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, color: Colors.white),
-            tooltip: 'Rename',
-            onPressed: () {
-              final raw = _selectedItems.first;
-              final isDir = raw.startsWith('[DIR] ');
-              final name = isDir ? raw.replaceFirst('[DIR] ', '') : raw.split('|').first;
-              _showRenameDialog(name);
-              _exitSelectionMode();
-            },
-          ),
-        IconButton(icon: const Icon(Icons.copy_outlined, color: Colors.white),
-            tooltip: 'Copy', onPressed: () => _initClipboard(cut: false)),
-        IconButton(icon: const Icon(Icons.cut_outlined, color: Colors.white),
-            tooltip: 'Cut', onPressed: () => _initClipboard(cut: true)),
-        IconButton(icon: const Icon(Icons.delete_outline, color: Color(0xFFEF5350)),
-            tooltip: 'Delete', onPressed: _batchDelete),
-        if (singleFile)
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
-            onSelected: (val) {
-              final raw  = _selectedItems.first;
-              final name = raw.split('|').first;
-              final path = _pathStack.last.fatPath.isEmpty ? name : '${_pathStack.last.fatPath}/$name';
-              if (val == 'open_with') {
-                vaultexplorerApi.openWithApp(widget.container, path);
-                _exitSelectionMode();
-              } else if (val == 'export') {
-                _exportFileToStorage(name, path);
-                _exitSelectionMode();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'open_with',
-                  child: ListTile(dense: true, contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.open_in_new, size: 18),
-                      title: Text('Open with App', style: TextStyle(fontSize: 13)))),
-              PopupMenuItem(value: 'export',
-                  child: ListTile(dense: true, contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.drive_folder_upload_outlined, size: 18),
-                      title: Text('Export File…', style: TextStyle(fontSize: 13)))),
-            ],
-          ),
-        const SizedBox(width: 8),
+        TextButton.icon(
+          style: TextButton.styleFrom(foregroundColor: cs.primary),
+          onPressed: _pasteClipboard,
+          icon: const Icon(Icons.paste, size: 16),
+          label: const Text('Paste Here', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+        ),
+        const SizedBox(width: 12),
       ],
     );
-  }
+  
+  
 
-  AppBar _buildClipboardAppBar(ColorScheme cs) => AppBar(
-        backgroundColor: cs.primaryContainer,
-        elevation: 2,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          tooltip: 'Cancel',
-          onPressed: _cancelClipboard,
-        ),
-        title: Text(
-          _isCutOperation
-              ? 'Moving ${_clipboardSourceFiles.length} item(s)'
-              : 'Copying ${_clipboardSourceFiles.length} item(s)',
-          style: TextStyle(color: cs.onPrimaryContainer,
-              fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-        actions: [
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-            ),
-            onPressed: _pasteClipboard,
-            icon: const Icon(Icons.paste, size: 14),
-            label: const Text('Paste Here',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(width: 12),
-        ],
-      );
+  
 
   // ---------------------------------------------------------------------------
   // Build
@@ -568,8 +642,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   @override
   Widget build(BuildContext context) {
     final cs    = Theme.of(context).colorScheme;
-    final dirs  = _currentItems.where((f) => f.startsWith('[DIR]')).toList();
-    final files = _currentItems.where((f) => !f.startsWith('[DIR]') && !f.startsWith('System:')).toList();
+    final dirs  = _currentItems.where((f) => f.startsWith('[DIR]')).toList()..sort(_compareItems);
+    final files = _currentItems.where((f) => !f.startsWith('[DIR]') && !f.startsWith('System:')).toList()
+      ..sort(_compareItems);
 
     final PreferredSizeWidget activeAppBar = _isSelectionMode
         ? _buildSelectionAppBar(cs)
@@ -596,12 +671,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   ],
                 ),
                 actions: [
+                  PopupMenuButton<_SortBy>(
+                    icon: const Icon(Icons.sort),
+                    tooltip: 'Sort by',
+                    onSelected: _setSort,
+                    itemBuilder: (_) => [
+                      _sortMenuItem(_SortBy.name, 'Name'),
+                      _sortMenuItem(_SortBy.size, 'Size'),
+                      _sortMenuItem(_SortBy.extension, 'Type'),
+                    ],
+                  ),
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.add),
                     onSelected: (v) {
                       if (v == 'folder') _showCreateFolderDialog();
                       else if (v == 'file') _showCreateFileDialog();
-                      else if (v == 'import') _importFileFromDevice();
+                      else if (v == 'import') _importFilesFromDevice();
                     },
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'folder',
@@ -612,7 +697,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                               title: Text('New File'))),
                       PopupMenuItem(value: 'import',
                           child: ListTile(leading: Icon(Icons.drive_folder_upload),
-                              title: Text('Import File from Device'))),
+                              title: Text('Import Files from Device'))),
                     ],
                   ),
                   

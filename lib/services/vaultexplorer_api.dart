@@ -84,16 +84,6 @@ class vaultexplorerApi {
     return result ?? false;
   }
 
-  static Future<bool> importFile(
-      MountedContainer container, String targetPath) async {
-    final result = await _channel.invokeMethod<bool>('importFile', {
-      'filePath': container.uri,
-      'password': container.password,
-      'pim': container.pim,
-      'targetPath': targetPath,
-    });
-    return result ?? false;
-  }
 
   static Future<bool> exportFileToStorage(
       MountedContainer container, String sourcePath) async {
@@ -220,4 +210,26 @@ class vaultexplorerApi {
     });
     return result?.cast<int>();
   }
+
+  static Future<int> importFiles(
+    MountedContainer container, String targetPath) async {
+  final result = await _channel.invokeMethod<int>('importFile', {
+    'filePath': container.uri,
+    'password': container.password,
+    'pim': container.pim,
+    'targetPath': targetPath,
+  });
+  return result ?? 0;
+}
+
+static Future<int> exportFilesToFolder(
+    MountedContainer container, List<String> sourcePaths) async {
+  final result = await _channel.invokeMethod<int>('exportFilesToFolder', {
+    'filePath': container.uri,
+    'password': container.password,
+    'pim': container.pim,
+    'sourcePaths': sourcePaths,
+  });
+  return result ?? 0;
+}
 }

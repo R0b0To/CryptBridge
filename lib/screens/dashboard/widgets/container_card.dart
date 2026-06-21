@@ -6,11 +6,13 @@ import '../../browser/file_browser_screen.dart';
 class ContainerCard extends StatelessWidget {
   final MountedContainer container;
   final ValueChanged<int> onLocked;
+  final VoidCallback onReturn;
 
   const ContainerCard({
     Key? key,
     required this.container,
     required this.onLocked,
+    required this.onReturn,
   }) : super(key: key);
 
   String _formatBytes(int bytes) {
@@ -49,12 +51,13 @@ class ContainerCard extends StatelessWidget {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => FileBrowserScreen(container: container),
-          ),
-        ),
+        onTap: () async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => FileBrowserScreen(container: container)),
+    );
+    onReturn();
+  },
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

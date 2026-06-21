@@ -6,6 +6,7 @@ import '../unlock/unlock_sheet.dart';
 import 'widgets/container_card.dart';
 import 'widgets/empty_state.dart';
 import 'widgets/create_container_sheet.dart';
+import '../../../services/vaultexplorer_api.dart';
 
 class VaultDashboard extends StatefulWidget {
   const VaultDashboard({Key? key}) : super(key: key);
@@ -14,15 +15,30 @@ class VaultDashboard extends StatefulWidget {
   State<VaultDashboard> createState() => _VaultDashboardState();
 }
 
-class _VaultDashboardState extends State<VaultDashboard> {
+class _VaultDashboardState extends State<VaultDashboard> with WidgetsBindingObserver {
   final List<MountedContainer> _mounted = [];
   List<Map<String, String>> _saved = [];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSaved();
   }
+   @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      for (final c in List<MountedContainer>.from(_mounted)) {
+        _refreshContainerSpace(c.volId);
+      }
+    }
+  }
+
 
   Future<void> _loadSaved() async {
     final saved = await SavedContainerService.loadContainers();
@@ -36,7 +52,19 @@ class _VaultDashboardState extends State<VaultDashboard> {
   void _onContainerLocked(int volId) {
     setState(() => _mounted.removeWhere((c) => c.volId == volId));
   }
-
+  Future<void> _refreshContainerSpace(int volId) async {
+    final idx = _mounted.indexWhere((c) => c.volId == volId);
+    if (idx == -1) return;
+    final container = _mounted[idx];
+    try {
+      final space = await vaultexplorerApi.getSpaceInfo(container);
+      if (space != null && space.length > 1 && mounted) {
+        setState(() {
+          _mounted[idx] = container.copyWith(totalSpace: space[0], freeSpace: space[1]);
+        });
+      }
+    } catch (_) {}
+  }
   Future<void> _showUnlockSheet({String? uri, String? name}) async {
     await showModalBottomSheet(
       context: context,
@@ -132,6 +160,7 @@ class _VaultDashboardState extends State<VaultDashboard> {
                   return ContainerCard(
                     container: item,
                     onLocked: _onContainerLocked,
+                    onReturn: () => _refreshContainerSpace(item.volId),
                   );
                 } else {
                   return SavedContainerCard(

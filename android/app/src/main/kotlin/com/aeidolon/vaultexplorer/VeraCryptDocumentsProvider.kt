@@ -21,14 +21,16 @@ import java.io.IOException
 class VeraCryptDocumentsProvider : DocumentsProvider() {
 
     private val defaultRootProjection: Array<String> = arrayOf(
-        DocumentsContract.Root.COLUMN_ROOT_ID,
-        DocumentsContract.Root.COLUMN_MIME_TYPES,
-        DocumentsContract.Root.COLUMN_FLAGS,
-        DocumentsContract.Root.COLUMN_ICON,
-        DocumentsContract.Root.COLUMN_TITLE,
-        DocumentsContract.Root.COLUMN_SUMMARY,
-        DocumentsContract.Root.COLUMN_DOCUMENT_ID
-    )
+    DocumentsContract.Root.COLUMN_ROOT_ID,
+    DocumentsContract.Root.COLUMN_MIME_TYPES,
+    DocumentsContract.Root.COLUMN_FLAGS,
+    DocumentsContract.Root.COLUMN_ICON,
+    DocumentsContract.Root.COLUMN_TITLE,
+    DocumentsContract.Root.COLUMN_SUMMARY,
+    DocumentsContract.Root.COLUMN_DOCUMENT_ID,
+    DocumentsContract.Root.COLUMN_AVAILABLE_BYTES,
+    DocumentsContract.Root.COLUMN_CAPACITY_BYTES
+)
 
     private val defaultDocumentProjection: Array<String> = arrayOf(
         DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -54,8 +56,7 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
                     DocumentsContract.Root.FLAG_LOCAL_ONLY or
                     DocumentsContract.Root.FLAG_SUPPORTS_EJECT
                     
-        // Crucial: Tell the system that this provider supports sub-tree validation.
-        // This is what makes it appear in standard app document pickers.
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             flags = flags or DocumentsContract.Root.FLAG_SUPPORTS_IS_CHILD
         }
@@ -64,16 +65,19 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
 
         for ((volId, session) in VeraCryptSession.activeSessions) {
             val rootTitle = session.displayName ?: getFileNameFromUri(session.uri)
-            val rootSummary = getSpaceSummary(session.uri)
+        val (totalBytes, freeBytes) = getRealSpace(session)
+        val rootSummary = if (totalBytes > 0) "Volume — ${android.text.format.Formatter.formatFileSize(context, freeBytes)} free" else "Volume"
             
             cursor.newRow().apply {
-                add(DocumentsContract.Root.COLUMN_ROOT_ID, volId.toString())
-                add(DocumentsContract.Root.COLUMN_MIME_TYPES, "*/*") // Map MIME types to enable broad matching
-                add(DocumentsContract.Root.COLUMN_DOCUMENT_ID, "$volId:dir:") // Root ID maps to dir:
-                add(DocumentsContract.Root.COLUMN_TITLE, rootTitle)
-                add(DocumentsContract.Root.COLUMN_SUMMARY, rootSummary)
-                add(DocumentsContract.Root.COLUMN_FLAGS, flags)
-                add(DocumentsContract.Root.COLUMN_ICON, android.R.drawable.ic_lock_idle_charging)
+            add(DocumentsContract.Root.COLUMN_ROOT_ID, volId.toString())
+            add(DocumentsContract.Root.COLUMN_MIME_TYPES, "*/*")
+            add(DocumentsContract.Root.COLUMN_DOCUMENT_ID, "$volId:dir:")
+            add(DocumentsContract.Root.COLUMN_TITLE, rootTitle)
+            add(DocumentsContract.Root.COLUMN_SUMMARY, rootSummary)
+            add(DocumentsContract.Root.COLUMN_FLAGS, flags)
+            add(DocumentsContract.Root.COLUMN_ICON, android.R.drawable.ic_lock_idle_charging)
+            add(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES, freeBytes)
+            add(DocumentsContract.Root.COLUMN_CAPACITY_BYTES, totalBytes)
             }
         }
 
@@ -394,7 +398,17 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         }
         return inSampleSize
     }
-
+    private fun getRealSpace(session: ContainerSession): Pair<Long, Long> {
+    return try {
+        val fd = getFd(session.uri, "r")
+        val space = synchronized(VeraCryptSession.locks[session.volId]) {
+            VeraCryptEngine.getSpaceInfoNative(fd, session.password, session.pim, session.volId)
+        }
+        if (space != null && space.size > 1) Pair(space[0], space[1]) else Pair(0L, 0L)
+    } catch (e: Exception) {
+        Pair(0L, 0L)
+    }
+}
     private fun getFileNameFromUri(uriString: String): String {
         val uri = Uri.parse(uriString)
         if (uri.scheme == "content") {
@@ -412,31 +426,6 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
             }
         }
         return uri.lastPathSegment?.substringAfterLast('/') ?: "Container"
-    }
-
-    private fun getSpaceSummary(uriString: String): String {
-        val uri = Uri.parse(uriString)
-        var size = 0L
-        if (uri.scheme == "content") {
-            try {
-                context?.contentResolver?.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                        if (sizeIndex != -1) {
-                            size = cursor.getLong(sizeIndex)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                // ignore
-            }
-        }
-        return if (size > 0) {
-            val sizeStr = android.text.format.Formatter.formatFileSize(context, size)
-            "VeraCrypt Volume ($sizeStr)"
-        } else {
-            "VeraCrypt Volume"
-        }
     }
 
     private fun getMimeType(fileName: String): String {
