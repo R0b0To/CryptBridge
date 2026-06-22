@@ -57,29 +57,7 @@ class FileTile extends StatelessWidget {
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                 )
               : null,
-          trailing: selectionMode
-              ? Icon(
-                  selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                  size: 18,
-                  color: selected ? cs.primary : cs.outline,
-                )
-              : Semantics(
-                  label: 'More actions for $name',
-                  button: true,
-                  child: GestureDetector(
-                    onTap: onMoreTap,
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 8),
-                      child: Icon(
-                        Icons.more_horiz,
-                        size: 18,
-                        color: cs.outline,
-                      ),
-                    ),
-                  ),
-                ),
+          
           onTap: onTap,
           onLongPress: onLongPress,
         ),

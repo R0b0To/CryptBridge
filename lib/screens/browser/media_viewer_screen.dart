@@ -1,10 +1,10 @@
-import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import '../../models/mounted_container.dart';
 import '../../services/vaultexplorer_api.dart';
+import '../../services/local_streaming_server.dart';
 
 class MediaViewerScreen extends StatefulWidget {
   final MountedContainer container;
@@ -44,7 +44,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
   ScrollPhysics _pagePhysics = const ClampingScrollPhysics();
 
-  _LocalStreamingServer? _streamingServer;
+  LocalStreamingServer? _streamingServer;
   int? _serverPort;
   bool _serverReady = false;
 
@@ -154,7 +154,7 @@ String? _serverError;
 
   Future<void> _startServer() async {
     try {
-      _streamingServer = _LocalStreamingServer(widget.container);
+      _streamingServer = LocalStreamingServer(widget.container);
       // FIX: add timeout so a bind failure doesn't freeze the screen
       final port = await _streamingServer!.start().timeout(
         const Duration(seconds: 5),
@@ -1400,152 +1400,3 @@ class _RealVideoPlayerWidgetState
   }
 }
 
-// ─────────────────────────────────────────────
-// Local HTTP streaming server
-// ─────────────────────────────────────────────
-
-class _LocalStreamingServer {
-  HttpServer? _server;
-  final MountedContainer container;
-
-  _LocalStreamingServer(this.container);
-
-  Future<int> start() async {
-    _server = await HttpServer.bind(
-        InternetAddress.loopbackIPv4, 0);
-    _server!.listen(_handleRequest);
-    return _server!.port;
-  }
-
-  Future<void> stop() async {
-    await _server?.close(force: true);
-  }
-
-  void _handleRequest(HttpRequest request) async {
-    try {
-      if (request.method != 'GET') {
-        request.response.statusCode =
-            HttpStatus.methodNotAllowed;
-        await request.response.close();
-        return;
-      }
-
-      final fileName =
-          request.uri.queryParameters['file'];
-      if (fileName == null) {
-        request.response.statusCode =
-            HttpStatus.badRequest;
-        await request.response.close();
-        return;
-      }
-
-      final fileSize = await vaultExplorerApi.getFileSize(
-          container, fileName);
-      if (fileSize <= 0) {
-        request.response.statusCode = HttpStatus.notFound;
-        await request.response.close();
-        return;
-      }
-
-      final headers = request.response.headers;
-      headers.set(HttpHeaders.contentTypeHeader,
-          _getMimeType(fileName));
-      headers.set(
-          HttpHeaders.acceptRangesHeader, 'bytes');
-
-      final rangeHeader =
-          request.headers.value(HttpHeaders.rangeHeader);
-
-      if (rangeHeader != null &&
-          rangeHeader.startsWith('bytes=')) {
-        final parts =
-            rangeHeader.substring(6).split('-');
-        final start = int.tryParse(parts[0]) ?? 0;
-        var end = parts.length > 1 &&
-                parts[1].isNotEmpty
-            ? int.tryParse(parts[1]) ?? (fileSize - 1)
-            : (fileSize - 1);
-        if (end >= fileSize) end = fileSize - 1;
-
-        final contentLength = end - start + 1;
-        request.response.statusCode =
-            HttpStatus.partialContent;
-        headers.set(HttpHeaders.contentRangeHeader,
-            'bytes $start-$end/$fileSize');
-        headers.set(HttpHeaders.contentLengthHeader,
-            contentLength.toString());
-
-        var currentPosition = start;
-        const chunkSize = 524288;
-        while (currentPosition <= end) {
-          final remaining = end - currentPosition + 1;
-          final currentChunkSize = remaining < chunkSize
-              ? remaining
-              : chunkSize;
-          final bytes = await vaultExplorerApi
-              .readFileChunk(container, fileName,
-                  currentPosition, currentChunkSize);
-          if (bytes == null || bytes.isEmpty) break;
-          request.response.add(bytes);
-          await request.response.flush();
-          currentPosition += bytes.length;
-        }
-      } else {
-        headers.set(HttpHeaders.contentLengthHeader,
-            fileSize.toString());
-        request.response.statusCode = HttpStatus.ok;
-
-        var currentPosition = 0;
-        const chunkSize = 131072;
-        while (currentPosition < fileSize) {
-          final remaining = fileSize - currentPosition;
-          final currentChunkSize = remaining < chunkSize
-              ? remaining
-              : chunkSize;
-          final bytes = await vaultExplorerApi
-              .readFileChunk(container, fileName,
-                  currentPosition, currentChunkSize);
-          if (bytes == null || bytes.isEmpty) break;
-          request.response.add(bytes);
-          await request.response.flush();
-          currentPosition += bytes.length;
-        }
-      }
-    } catch (e, stack) {
-      debugPrint('STREAM SERVER EXCEPTION: $e');
-      debugPrint('$stack');
-    } finally {
-      try {
-        await request.response.close();
-      } catch (_) {}
-    }
-  }
-
-  String _getMimeType(String fileName) {
-    final ext = fileName.split('.').last.toLowerCase();
-    switch (ext) {
-      case 'mp4':
-      case 'm4v':
-        return 'video/mp4';
-      case 'webm':
-        return 'video/webm';
-      case 'mkv':
-        return 'video/x-matroska';
-      case 'mov':
-        return 'video/quicktime';
-      case 'avi':
-        return 'video/x-msvideo';
-      case 'png':
-        return 'image/png';
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'webp':
-        return 'image/webp';
-      case 'gif':
-        return 'image/gif';
-      default:
-        return 'application/octet-stream';
-    }
-  }
-}
