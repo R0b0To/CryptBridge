@@ -6,6 +6,12 @@ import '../../models/mounted_container.dart';
 import '../../services/vaultexplorer_api.dart';
 import '../../services/local_streaming_server.dart';
 
+// ── Cycling constant ──────────────────────────────────────────────────────────
+// Virtual page count multiplier for the cycling PageView.
+// Starting at offset * length keeps plenty of room to scroll in both
+// directions, giving a seamless wrap-around experience.
+const int _kCycleOffset = 100;
+
 class MediaViewerScreen extends StatefulWidget {
   final MountedContainer container;
   final List<String> mediaFiles;
@@ -25,9 +31,18 @@ class MediaViewerScreen extends StatefulWidget {
 
 class _MediaViewerScreenState extends State<MediaViewerScreen> {
   late PageController _pageController;
+
+  /// Incremented to force the PageView to rebuild when the list or cycling
+  /// toggle changes (e.g. so the PageController can be swapped safely).
+  int _pageViewKey = 0;
+
   late int _currentIndex;
   bool _showUI = true;
   bool _isLandscape = false;
+
+  /// Whether the playlist should wrap around when reaching either end.
+  /// Default on — toggle via the ⋯ menu.
+  bool _isCycling = true;
 
   late List<String> _originalList;
   late List<String> _currentPlaylist;
@@ -36,10 +51,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   String _selectedFolder = 'Current Folder Only';
   int _doubleTapSkipSeconds = 5;
 
-  /// Set to true once the background recursive directory scan has completed.
   bool _allFilesScanned = false;
-
-  /// True while a subfolder scan is running (triggered by choosing 'All').
   bool _isScanningSubfolders = false;
 
   ScrollPhysics _pagePhysics = const ClampingScrollPhysics();
@@ -47,71 +59,74 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   LocalStreamingServer? _streamingServer;
   int? _serverPort;
   bool _serverReady = false;
+  String? _serverError;
 
+  // ── Virtual-page helpers ──────────────────────────────────────────────────────
+
+  /// Maps a real playlist index to the corresponding virtual PageView page.
+  int _virtualPage(int realIndex) {
+    if (!_isCycling || _currentPlaylist.isEmpty) return realIndex;
+    return _kCycleOffset * _currentPlaylist.length + realIndex;
+  }
+
+  /// Maps a virtual PageView page back to the real playlist index.
+  int _realPage(int virtualIndex) {
+    if (!_isCycling || _currentPlaylist.isEmpty) return virtualIndex;
+    return virtualIndex % _currentPlaylist.length;
+  }
+
+  /// Total item count exposed to the PageView.
+  int get _pageViewItemCount {
+    if (_currentPlaylist.isEmpty) return 0;
+    if (!_isCycling) return _currentPlaylist.length;
+    return _kCycleOffset * 2 * _currentPlaylist.length;
+  }
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
-    _originalList = List.from(widget.mediaFiles);
+    _originalList    = List.from(widget.mediaFiles);
     _currentPlaylist = List.from(widget.mediaFiles);
-    _currentIndex = widget.initialIndex;
-    _pageController =
-        PageController(initialPage: widget.initialIndex);
+    _currentIndex    = widget.initialIndex;
+    _pageController  = PageController(initialPage: _virtualPage(widget.initialIndex));
     _startServer();
   }
 
-  /// Returns the base directory shared by all files in the initial playlist.
   String _getBaseDir() {
     if (widget.mediaFiles.isEmpty) return '';
-    final firstFile = widget.mediaFiles.first;
-    if (!firstFile.contains('/')) return '';
-    return firstFile.substring(0, firstFile.lastIndexOf('/'));
+    final first = widget.mediaFiles.first;
+    if (!first.contains('/')) return '';
+    return first.substring(0, first.lastIndexOf('/'));
   }
 
   bool _isSupportedMedia(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
-    return [
-      'jpg', 'jpeg', 'png', 'gif', 'webp',
-      'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv',
-    ].contains(ext);
+    return ['jpg', 'jpeg', 'png', 'gif', 'webp',
+            'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv'].contains(ext);
   }
 
-  /// Runs the recursive directory scan and populates [_originalList].
   Future<void> _loadRecursiveMedia() async {
     final baseDir = _getBaseDir();
-    final recursiveFiles =
-        await _scanDirectoryRecursively(baseDir);
+    final recursiveFiles = await _scanDirectoryRecursively(baseDir);
     if (recursiveFiles.isEmpty) return;
-    if (mounted) {
-      setState(() {
-        _originalList = List.from(recursiveFiles);
-      });
-    }
+    if (mounted) setState(() => _originalList = List.from(recursiveFiles));
   }
 
-  Future<List<String>> _scanDirectoryRecursively(
-      String baseDir) async {
+  Future<List<String>> _scanDirectoryRecursively(String baseDir) async {
     final foundFiles = <String>[];
     try {
-      final items = await vaultExplorerApi.listDirectory(
-          widget.container, baseDir);
+      final items = await vaultExplorerApi.listDirectory(widget.container, baseDir);
       if (items != null) {
         for (final item in items) {
           if (item.startsWith('[DIR] ')) {
-            final subDirName =
-                item.replaceFirst('[DIR] ', '');
-            final subDirPath = baseDir.isEmpty
-                ? subDirName
-                : '$baseDir/$subDirName';
-            final nested =
-                await _scanDirectoryRecursively(subDirPath);
-            foundFiles.addAll(nested);
+            final subDirName = item.replaceFirst('[DIR] ', '');
+            final subDirPath = baseDir.isEmpty ? subDirName : '$baseDir/$subDirName';
+            foundFiles.addAll(await _scanDirectoryRecursively(subDirPath));
           } else if (!item.startsWith('System:')) {
             final fileName = item.split('|').first;
             if (_isSupportedMedia(fileName)) {
-              final fullPath = baseDir.isEmpty
-                  ? fileName
-                  : '$baseDir/$fileName';
-              foundFiles.add(fullPath);
+              foundFiles.add(baseDir.isEmpty ? fileName : '$baseDir/$fileName');
             }
           }
         }
@@ -122,50 +137,14 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     return foundFiles;
   }
 
-  void _applyFolderFiltering(
-      String folder, String currentFile) {
-    final baseDir = _getBaseDir();
-    List<String> filteredList;
-
-    if (folder == 'All') {
-      filteredList = List.from(_originalList);
-    } else {
-      filteredList = _originalList.where((file) {
-        final dir = file.contains('/')
-            ? file.substring(0, file.lastIndexOf('/'))
-            : '';
-        return dir == baseDir;
-      }).toList();
-    }
-
-    int newIndex = filteredList.indexOf(currentFile);
-    if (newIndex == -1) newIndex = 0;
-
-    if (filteredList.isNotEmpty) {
-      _currentPlaylist = filteredList;
-      _currentIndex = newIndex;
-      if (_pageController.hasClients) {
-        _pageController.jumpToPage(_currentIndex);
-      }
-    }
-  }
-
-String? _serverError;
-
   Future<void> _startServer() async {
     try {
       _streamingServer = LocalStreamingServer(widget.container);
-      // FIX: add timeout so a bind failure doesn't freeze the screen
       final port = await _streamingServer!.start().timeout(
         const Duration(seconds: 5),
         onTimeout: () => throw Exception('Streaming server timed out'),
       );
-      if (mounted) {
-        setState(() {
-          _serverPort = port;
-          _serverReady = true;
-        });
-      }
+      if (mounted) setState(() { _serverPort = port; _serverReady = true; });
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -179,24 +158,51 @@ String? _serverError;
   void dispose() {
     _pageController.dispose();
     _streamingServer?.stop();
-    SystemChrome.setEnabledSystemUIMode(
-        SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations(
-        [DeviceOrientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 
+  // ── Cycling ───────────────────────────────────────────────────────────────────
+
+  void _toggleCycling() {
+    final currentRealIndex = _currentIndex;
+    final oldController    = _pageController;
+    _isCycling = !_isCycling;
+    _pageController = PageController(initialPage: _virtualPage(currentRealIndex));
+    setState(() => _pageViewKey++);
+    WidgetsBinding.instance.addPostFrameCallback((_) => oldController.dispose());
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(_isCycling ? 'Cycling enabled' : 'Cycling disabled'),
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
+  /// Called by the video player when the current video finishes.
+  void _onCurrentVideoComplete() {
+    if (!mounted || _currentPlaylist.isEmpty) return;
+    if (!_isCycling && _currentIndex >= _currentPlaylist.length - 1) return;
+
+    final currentVirtual =
+        (_pageController.page ?? _virtualPage(_currentIndex).toDouble())
+            .round();
+    _pageController.animateToPage(
+      currentVirtual + 1,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  // ── UI visibility ─────────────────────────────────────────────────────────────
   void _setUIVisibility(bool show) {
     if (mounted) {
       setState(() => _showUI = show);
       if (show) {
-        SystemChrome.setEnabledSystemUIMode(
-            SystemUiMode.edgeToEdge);
-        SystemChrome.setPreferredOrientations(
-            [DeviceOrientation.portraitUp]);
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       } else {
-        SystemChrome.setEnabledSystemUIMode(
-            SystemUiMode.immersiveSticky);
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       }
     }
   }
@@ -209,69 +215,115 @@ String? _serverError;
         DeviceOrientation.landscapeRight,
       ]);
     } else {
-      SystemChrome.setPreferredOrientations(
-          [DeviceOrientation.portraitUp]);
+      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     }
   }
 
+  // ── Shuffle ───────────────────────────────────────────────────────────────────
   void _toggleShuffle() {
+    final currentFile = _currentPlaylist[_currentIndex];
+    final baseDir     = _getBaseDir();
+
+    late final List<String> newPlaylist;
+    late final int          newIndex;
+    final bool              newIsShuffled;
+
+    if (!_isShuffled) {
+      final shuffled = List<String>.from(_currentPlaylist)
+        ..remove(currentFile)
+        ..shuffle();
+      shuffled.insert(0, currentFile);
+      newPlaylist   = shuffled;
+      newIndex      = 0;
+      newIsShuffled = true;
+    } else {
+      newPlaylist = _selectedFolder == 'All'
+          ? List.from(_originalList)
+          : _originalList.where((file) {
+              final dir = file.contains('/')
+                  ? file.substring(0, file.lastIndexOf('/'))
+                  : '';
+              return dir == baseDir;
+            }).toList();
+      newIndex      = newPlaylist.indexOf(currentFile).clamp(0, newPlaylist.length - 1);
+      newIsShuffled = false;
+    }
+
+    if (newPlaylist.isEmpty) return;
+
+    final newVirtualPage = _isCycling
+        ? _kCycleOffset * newPlaylist.length + newIndex
+        : newIndex;
+    final oldController = _pageController;
+    _pageController = PageController(initialPage: newVirtualPage);
+
     setState(() {
-      final currentFile = _currentPlaylist[_currentIndex];
-      if (!_isShuffled) {
-        final shuffled = List<String>.from(_currentPlaylist)
-          ..remove(currentFile)
-          ..shuffle();
-        shuffled.insert(0, currentFile);
-        _currentPlaylist = shuffled;
-        _currentIndex = 0;
-        if (_pageController.hasClients) {
-          _pageController.jumpToPage(0);
-        }
-        _isShuffled = true;
-      } else {
-        _applyFolderFiltering(_selectedFolder, currentFile);
-        _isShuffled = false;
-      }
+      _isShuffled      = newIsShuffled;
+      _currentPlaylist = newPlaylist;
+      _currentIndex    = newIndex;
+      _pageViewKey++;
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => oldController.dispose());
   }
 
+  // ── Folder filter ─────────────────────────────────────────────────────────────
   Future<void> _filterByFolder(String folder) async {
     if (folder == 'All' && !_allFilesScanned) {
       if (mounted) {
         setState(() => _isScanningSubfolders = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Scanning subfolders…'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Scanning subfolders…'),
+          duration: Duration(seconds: 2),
+        ));
       }
       await _loadRecursiveMedia();
       _allFilesScanned = true;
       if (mounted) setState(() => _isScanningSubfolders = false);
     }
     if (!mounted) return;
+
+    final currentFile = _currentPlaylist[_currentIndex];
+    final baseDir     = _getBaseDir();
+
+    final List<String> filteredList = folder == 'All'
+        ? List.from(_originalList)
+        : _originalList.where((file) {
+            final dir = file.contains('/')
+                ? file.substring(0, file.lastIndexOf('/'))
+                : '';
+            return dir == baseDir;
+          }).toList();
+
+    if (filteredList.isEmpty) return;
+
+    final newIndex = filteredList.indexOf(currentFile).clamp(0, filteredList.length - 1);
+    final newVirtualPage = _isCycling
+        ? _kCycleOffset * filteredList.length + newIndex
+        : newIndex;
+
+    final oldController = _pageController;
+    _pageController = PageController(initialPage: newVirtualPage);
+
     setState(() {
-      _selectedFolder = folder;
-      final currentFile = _currentPlaylist[_currentIndex];
-      _applyFolderFiltering(folder, currentFile);
+      _selectedFolder  = folder;
+      _currentPlaylist = filteredList;
+      _currentIndex    = newIndex;
+      _pageViewKey++;
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => oldController.dispose());
   }
 
+  // ── Actions ───────────────────────────────────────────────────────────────────
   Future<void> _openWithApp() async {
     final currentFile = _currentPlaylist[_currentIndex];
     try {
-      await vaultExplorerApi.openWithApp(
-          widget.container, currentFile);
+      await vaultExplorerApi.openWithApp(widget.container, currentFile);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Failed to open file in external app: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to open file in external app: $e'),
+          backgroundColor: Colors.red,
+        ));
       }
     }
   }
@@ -290,13 +342,11 @@ String? _serverError;
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-                foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
@@ -307,31 +357,37 @@ String? _serverError;
       final currentFile = _currentPlaylist[_currentIndex];
       bool success = false;
       try {
-        success = await vaultExplorerApi.deleteFile(
-            widget.container, currentFile);
+        success = await vaultExplorerApi.deleteFile(widget.container, currentFile);
       } catch (e) {
         debugPrint('Error executing API deletion: $e');
       }
 
       if (success && mounted) {
-        setState(() {
-          _currentPlaylist.removeAt(_currentIndex);
-          _originalList.remove(currentFile);
+        final newPlaylist = List<String>.from(_currentPlaylist)
+          ..removeAt(_currentIndex);
+        _originalList.remove(currentFile);
 
-          if (_currentPlaylist.isEmpty) {
-            Navigator.pop(context);
-            return;
-          }
-          if (_currentIndex >= _currentPlaylist.length) {
-            _currentIndex = _currentPlaylist.length - 1;
-          }
-          if (_pageController.hasClients) {
-            _pageController.jumpToPage(_currentIndex);
-          }
+        if (newPlaylist.isEmpty) {
+          Navigator.pop(context);
+          return;
+        }
+
+        final newIndex      = _currentIndex.clamp(0, newPlaylist.length - 1);
+        final newVirtualPage = _isCycling
+            ? _kCycleOffset * newPlaylist.length + newIndex
+            : newIndex;
+        final oldController = _pageController;
+        _pageController = PageController(initialPage: newVirtualPage);
+
+        setState(() {
+          _currentPlaylist = newPlaylist;
+          _currentIndex    = newIndex;
+          _pageViewKey++;
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) => oldController.dispose());
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('File deleted successfully')),
+          const SnackBar(content: Text('File deleted successfully')),
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -343,6 +399,7 @@ String? _serverError;
     }
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     if (_serverError != null) {
@@ -357,11 +414,9 @@ String? _serverError;
                 const Icon(Icons.error_outline,
                     color: Color(0xFFEF5350), size: 40),
                 const SizedBox(height: 16),
-                Text(
-                  _serverError!,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                  textAlign: TextAlign.center,
-                ),
+                Text(_serverError!,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    textAlign: TextAlign.center),
                 const SizedBox(height: 20),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
@@ -380,33 +435,36 @@ String? _serverError;
         body: Center(
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(
-                Color(0xFF4FC3F7)),
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4FC3F7)),
           ),
         ),
       );
     }
 
-    final total = _currentPlaylist.length;
+    final total       = _currentPlaylist.length;
     final currentName = _currentPlaylist[_currentIndex];
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
+          // ── Page view ───────────────────────────────────────────────────────
           PageView.builder(
+            key: ValueKey(_pageViewKey),
             controller: _pageController,
             physics: _pagePhysics,
-            itemCount: total,
-            onPageChanged: (index) {
-              setState(() => _currentIndex = index);
+            itemCount: _pageViewItemCount,
+            onPageChanged: (virtualIndex) {
+              setState(() => _currentIndex = _realPage(virtualIndex));
             },
-            itemBuilder: (context, index) {
+            itemBuilder: (context, virtualIndex) {
+              final realIndex = _realPage(virtualIndex);
               final streamUrl =
-                  'http://127.0.0.1:$_serverPort/media?file=${_currentPlaylist[index]}';
+                  'http://127.0.0.1:$_serverPort/media'
+                  '?file=${Uri.encodeQueryComponent(_currentPlaylist[realIndex])}';
               return _MediaPage(
-                key: ValueKey(_currentPlaylist[index]),
-                fileName: _currentPlaylist[index],
+                key: ValueKey(realIndex),
+                fileName: _currentPlaylist[realIndex],
                 streamUrl: streamUrl,
                 showUI: _showUI,
                 onToggleUI: _setUIVisibility,
@@ -418,11 +476,14 @@ String? _serverError;
                         : const NeverScrollableScrollPhysics();
                   });
                 },
+                onVideoComplete: _onCurrentVideoComplete,
+                onSkipSecondsChanged: (s) =>
+                    setState(() => _doubleTapSkipSeconds = s),
               );
             },
           ),
 
-          // Top action bar
+          // ── Top action bar ──────────────────────────────────────────────────
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOut,
@@ -440,15 +501,13 @@ String? _serverError;
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back,
-                        color: Colors.white),
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
                     onPressed: () => Navigator.pop(context),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           currentName.split('/').last,
@@ -461,10 +520,10 @@ String? _serverError;
                         const SizedBox(height: 2),
                         Text(
                           '${_currentIndex + 1} of $total'
+                              '${_isCycling ? '  •  ↻' : ''}'
                               '${_isScanningSubfolders ? '  •  scanning…' : ''}',
                           style: const TextStyle(
-                              color: Color(0xFF7A8899),
-                              fontSize: 11),
+                              color: Color(0xFF7A8899), fontSize: 11),
                         ),
                       ],
                     ),
@@ -476,8 +535,7 @@ String? _serverError;
                     onPressed: _deleteCurrentFile,
                   ),
                   PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert,
-                        color: Colors.white),
+                    icon: const Icon(Icons.more_vert, color: Colors.white),
                     tooltip: 'More Actions',
                     onSelected: (value) {
                       if (value == 'open_with') {
@@ -486,19 +544,12 @@ String? _serverError;
                         _toggleOrientation();
                       } else if (value == 'toggle_shuffle') {
                         _toggleShuffle();
+                      } else if (value == 'toggle_cycling') {
+                        _toggleCycling();
                       } else if (value == 'folder_current') {
                         _filterByFolder('Current Folder Only');
                       } else if (value == 'folder_all') {
                         _filterByFolder('All');
-                      } else if (value.startsWith('skip_')) {
-                        final seconds = int.parse(
-                            value.split('_')[1]);
-                        setState(() =>
-                            _doubleTapSkipSeconds = seconds);
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(SnackBar(
-                                content: Text(
-                                    'Double-tap skip set to ${seconds}s')));
                       }
                     },
                     itemBuilder: (context) => [
@@ -520,25 +571,33 @@ String? _serverError;
                             size: 18,
                           ),
                           const SizedBox(width: 8),
-                          Text(_isLandscape
-                              ? 'Portrait Mode'
-                              : 'Landscape Mode'),
+                          Text(_isLandscape ? 'Portrait Mode' : 'Landscape Mode'),
                         ]),
                       ),
                       PopupMenuItem<String>(
                         value: 'toggle_shuffle',
                         child: Row(children: [
-                          Icon(
-                            Icons.shuffle,
-                            color: _isShuffled
-                                ? const Color(0xFF4FC3F7)
-                                : Colors.grey,
-                            size: 18,
-                          ),
+                          Icon(Icons.shuffle,
+                              color: _isShuffled
+                                  ? const Color(0xFF4FC3F7)
+                                  : Colors.grey,
+                              size: 18),
                           const SizedBox(width: 8),
                           Text(_isShuffled
                               ? 'Disable Shuffle'
                               : 'Shuffle Playlist'),
+                        ]),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'toggle_cycling',
+                        child: Row(children: [
+                          Icon(Icons.repeat,
+                              color: _isCycling
+                                  ? const Color(0xFF4FC3F7)
+                                  : Colors.grey,
+                              size: 18),
+                          const SizedBox(width: 8),
+                          Text(_isCycling ? 'Disable Cycling' : 'Enable Cycling'),
                         ]),
                       ),
                       const PopupMenuDivider(),
@@ -548,15 +607,13 @@ String? _serverError;
                             style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Theme.of(context)
-                                    .disabledColor)),
+                                color: Theme.of(context).disabledColor)),
                       ),
                       PopupMenuItem<String>(
                         value: 'folder_current',
                         child: Row(children: [
                           Icon(Icons.folder_shared,
-                              color: _selectedFolder ==
-                                      'Current Folder Only'
+                              color: _selectedFolder == 'Current Folder Only'
                                   ? const Color(0xFF4FC3F7)
                                   : Colors.grey,
                               size: 18),
@@ -576,22 +633,6 @@ String? _serverError;
                           const Text('All (Incl. Subfolders)'),
                         ]),
                       ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem<String>(
-                        enabled: false,
-                        child: Text('Seek Skip Settings',
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(context)
-                                    .disabledColor)),
-                      ),
-                      ...[5, 10, 15, 30].map((s) =>
-                          PopupMenuItem<String>(
-                            value: 'skip_$s',
-                            child: Text(
-                                'Skip ${s}s${_doubleTapSkipSeconds == s ? ' ✓' : ''}'),
-                          )),
                     ],
                   ),
                 ],
@@ -616,6 +657,12 @@ class _MediaPage extends StatefulWidget {
   final ValueChanged<bool> onZoomChanged;
   final int skipSeconds;
 
+  /// Fired when the video reaches its natural end (ignored for images).
+  final VoidCallback? onVideoComplete;
+
+  /// Fired when the user changes the double-tap skip duration.
+  final ValueChanged<int>? onSkipSecondsChanged;
+
   const _MediaPage({
     Key? key,
     required this.fileName,
@@ -624,6 +671,8 @@ class _MediaPage extends StatefulWidget {
     required this.onToggleUI,
     required this.onZoomChanged,
     required this.skipSeconds,
+    this.onVideoComplete,
+    this.onSkipSecondsChanged,
   }) : super(key: key);
 
   @override
@@ -650,10 +699,9 @@ class _MediaPageState extends State<_MediaPage> {
         if (position != null) {
           final x = -position.dx * (_scale - 1);
           final y = -position.dy * (_scale - 1);
-          _transformationController.value =
-              Matrix4.identity()
-                ..translate(x, y)
-                ..scale(_scale);
+          _transformationController.value = Matrix4.identity()
+            ..translate(x, y)
+            ..scale(_scale);
         } else {
           _transformationController.value =
               Matrix4.identity()..scale(_scale);
@@ -661,8 +709,7 @@ class _MediaPageState extends State<_MediaPage> {
         widget.onZoomChanged(false);
       } else {
         _scale = 1.0;
-        _transformationController.value =
-            Matrix4.identity();
+        _transformationController.value = Matrix4.identity();
         widget.onZoomChanged(true);
       }
     });
@@ -670,51 +717,39 @@ class _MediaPageState extends State<_MediaPage> {
 
   @override
   Widget build(BuildContext context) {
-    final ext =
-        widget.fileName.split('.').last.toLowerCase();
-    final isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp']
-        .contains(ext);
+    final ext = widget.fileName.split('.').last.toLowerCase();
+    final isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext);
 
     return Container(
       color: Colors.black,
       child: isImg
           ? GestureDetector(
-              onTap: () =>
-                  widget.onToggleUI(!widget.showUI),
-              onDoubleTapDown: (details) {
-                _doubleTapDetails = details;
-              },
+              onTap: () => widget.onToggleUI(!widget.showUI),
+              onDoubleTapDown: (d) => _doubleTapDetails = d,
               onDoubleTap: _handleDoubleTap,
               child: InteractiveViewer(
-                transformationController:
-                    _transformationController,
+                transformationController: _transformationController,
                 maxScale: 4.0,
                 onInteractionUpdate: (details) {
-                  final newScale =
-                      _transformationController.value
-                          .getMaxScaleOnAxis();
+                  final newScale = _transformationController.value
+                      .getMaxScaleOnAxis();
                   if (newScale != _scale) {
                     setState(() => _scale = newScale);
                     widget.onZoomChanged(newScale <= 1.01);
                   }
                 },
                 onInteractionEnd: (details) {
-                  final newScale =
-                      _transformationController.value
-                          .getMaxScaleOnAxis();
-                  if (newScale <= 1.01)
-                    widget.onZoomChanged(true);
+                  final newScale = _transformationController.value
+                      .getMaxScaleOnAxis();
+                  if (newScale <= 1.01) widget.onZoomChanged(true);
                 },
                 child: Center(
                   child: Image.network(
                     widget.streamUrl,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error,
-                            stackTrace) =>
-                        const Center(
+                    errorBuilder: (_, __, ___) => const Center(
                       child: Text('Failed to stream image.',
-                          style: TextStyle(
-                              color: Colors.red)),
+                          style: TextStyle(color: Colors.red)),
                     ),
                   ),
                 ),
@@ -726,6 +761,8 @@ class _MediaPageState extends State<_MediaPage> {
               onToggleUI: widget.onToggleUI,
               skipSeconds: widget.skipSeconds,
               onZoomChanged: widget.onZoomChanged,
+              onVideoComplete: widget.onVideoComplete,
+              onSkipSecondsChanged: widget.onSkipSecondsChanged,
             ),
     );
   }
@@ -742,6 +779,12 @@ class RealVideoPlayerWidget extends StatefulWidget {
   final int skipSeconds;
   final ValueChanged<bool> onZoomChanged;
 
+  /// Called once when the video reaches its natural end while not looping.
+  final VoidCallback? onVideoComplete;
+
+  /// Called when the user picks a new skip-seconds value from the bottom bar.
+  final ValueChanged<int>? onSkipSecondsChanged;
+
   const RealVideoPlayerWidget({
     Key? key,
     required this.streamUrl,
@@ -749,6 +792,8 @@ class RealVideoPlayerWidget extends StatefulWidget {
     required this.onToggleUI,
     required this.skipSeconds,
     required this.onZoomChanged,
+    this.onVideoComplete,
+    this.onSkipSecondsChanged,
   }) : super(key: key);
 
   @override
@@ -774,10 +819,12 @@ class _RealVideoPlayerWidgetState
   bool _showRightIndicator = false;
   bool _isSpeedHeld = false;
 
-  // Audio, Loop, and Playback Speed state variables
   bool _isMuted = false;
   bool _isLooping = false;
   double _playbackSpeed = 1.0;
+
+  /// Guards against firing [onVideoComplete] more than once per playthrough.
+  bool _hasAutoAdvanced = false;
 
   final TransformationController _videoTransformationController =
       TransformationController();
@@ -795,33 +842,10 @@ class _RealVideoPlayerWidgetState
       _controller = VideoPlayerController.networkUrl(
           Uri.parse(widget.streamUrl));
     } catch (e) {
-      _controller =
-          VideoPlayerController.network(widget.streamUrl);
+      _controller = VideoPlayerController.network(widget.streamUrl);
     }
 
-    _controller.addListener(() {
-      if (_controller.value.hasError) {
-        if (mounted) {
-          setState(() {
-            _playerError =
-                _controller.value.errorDescription ??
-                    'ExoPlayer stream error.';
-          });
-        }
-        return;
-      }
-      if (mounted && _initialized) {
-        setState(() {
-          _position = _controller.value.position;
-          _duration = _controller.value.duration;
-          if (!_isDragging &&
-              _duration.inMilliseconds > 0) {
-            _sliderValue = _position.inMilliseconds /
-                _duration.inMilliseconds;
-          }
-        });
-      }
-    });
+    _controller.addListener(_onControllerUpdate);
 
     try {
       await _controller.initialize();
@@ -838,9 +862,51 @@ class _RealVideoPlayerWidgetState
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _playerError =
-            'Stream initialization failed: $e');
+        setState(() =>
+            _playerError = 'Stream initialization failed: $e');
       }
+    }
+  }
+
+  void _onControllerUpdate() {
+    if (!mounted) return;
+
+    final value = _controller.value;
+
+    if (value.hasError) {
+      if (mounted) {
+        setState(() {
+          _playerError = value.errorDescription ?? 'ExoPlayer stream error.';
+        });
+      }
+      return;
+    }
+
+    if (_initialized) {
+      // Auto-advance when video naturally reaches the end (not while looping).
+      if (!value.isPlaying &&
+          value.duration > Duration.zero &&
+          value.position >= value.duration - const Duration(milliseconds: 300) &&
+          !_hasAutoAdvanced &&
+          !_isLooping) {
+        _hasAutoAdvanced = true;
+        widget.onVideoComplete?.call();
+      }
+
+      // Reset the guard whenever the playhead is near the beginning
+      // (covers the case where the user seeks back to restart).
+      if (value.position < const Duration(seconds: 1)) {
+        _hasAutoAdvanced = false;
+      }
+
+      setState(() {
+        _position = value.position;
+        _duration = value.duration;
+        if (!_isDragging && _duration.inMilliseconds > 0) {
+          _sliderValue =
+              _position.inMilliseconds / _duration.inMilliseconds;
+        }
+      });
     }
   }
 
@@ -848,18 +914,15 @@ class _RealVideoPlayerWidgetState
   void dispose() {
     _hideTimer?.cancel();
     _videoTransformationController.dispose();
-    try {
-      _controller.dispose();
-    } catch (_) {}
+    _controller.removeListener(_onControllerUpdate);
+    try { _controller.dispose(); } catch (_) {}
     super.dispose();
   }
 
   void _startHideTimer() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted &&
-          _controller.value.isPlaying &&
-          widget.showUI) {
+      if (mounted && _controller.value.isPlaying && widget.showUI) {
         widget.onToggleUI(false);
       }
     });
@@ -881,7 +944,7 @@ class _RealVideoPlayerWidgetState
   void _onSpeedHoldEnd(LongPressEndDetails _) {
     if (!_initialized) return;
     setState(() => _isSpeedHeld = false);
-    _controller.setPlaybackSpeed(_playbackSpeed); // Restores user choice
+    _controller.setPlaybackSpeed(_playbackSpeed);
     _showControlsAndResetTimer();
   }
 
@@ -917,10 +980,9 @@ class _RealVideoPlayerWidgetState
         if (position != null) {
           final x = -position.dx * (_videoScale - 1);
           final y = -position.dy * (_videoScale - 1);
-          _videoTransformationController.value =
-              Matrix4.identity()
-                ..translate(x, y)
-                ..scale(_videoScale);
+          _videoTransformationController.value = Matrix4.identity()
+            ..translate(x, y)
+            ..scale(_videoScale);
         } else {
           _videoTransformationController.value =
               Matrix4.identity()..scale(_videoScale);
@@ -928,8 +990,7 @@ class _RealVideoPlayerWidgetState
         widget.onZoomChanged(false);
       } else {
         _videoScale = 1.0;
-        _videoTransformationController.value =
-            Matrix4.identity();
+        _videoTransformationController.value = Matrix4.identity();
         widget.onZoomChanged(true);
       }
     });
@@ -937,8 +998,9 @@ class _RealVideoPlayerWidgetState
 
   void _skip({required bool backwards}) {
     _showControlsAndResetTimer();
+    _hasAutoAdvanced = false; // allow re-triggering if user seeks back to end
     final currentPos = _controller.value.position;
-    final targetPos = backwards
+    final targetPos  = backwards
         ? currentPos - Duration(seconds: widget.skipSeconds)
         : currentPos + Duration(seconds: widget.skipSeconds);
     final clampedPos = targetPos < Duration.zero
@@ -955,7 +1017,7 @@ class _RealVideoPlayerWidgetState
     Timer(const Duration(milliseconds: 550), () {
       if (mounted) {
         setState(() {
-          _showLeftIndicator = false;
+          _showLeftIndicator  = false;
           _showRightIndicator = false;
         });
       }
@@ -963,14 +1025,10 @@ class _RealVideoPlayerWidgetState
   }
 
   String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes
-        .remainder(60)
-        .toString()
-        .padLeft(2, '0');
-    final seconds = duration.inSeconds
-        .remainder(60)
-        .toString()
-        .padLeft(2, '0');
+    final minutes =
+        duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds =
+        duration.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
   }
 
@@ -988,8 +1046,7 @@ class _RealVideoPlayerWidgetState
               const SizedBox(height: 12),
               Text(_playerError!,
                   style: const TextStyle(
-                      color: Color(0xFFEF5350),
-                      fontSize: 13),
+                      color: Color(0xFFEF5350), fontSize: 13),
                   textAlign: TextAlign.center),
             ],
           ),
@@ -1001,8 +1058,7 @@ class _RealVideoPlayerWidgetState
       return const Center(
         child: CircularProgressIndicator(
             strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(
-                Color(0xFF4FC3F7))),
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4FC3F7))),
       );
     }
 
@@ -1011,28 +1067,24 @@ class _RealVideoPlayerWidgetState
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          // Video canvas with zoom
+          // ── Video canvas with zoom ──────────────────────────────────────────
           InteractiveViewer(
-            transformationController:
-                _videoTransformationController,
+            transformationController: _videoTransformationController,
             maxScale: 6.0,
             minScale: 1.0,
             clipBehavior: Clip.none,
             onInteractionUpdate: (details) {
-              final newScale =
-                  _videoTransformationController.value
-                      .getMaxScaleOnAxis();
+              final newScale = _videoTransformationController.value
+                  .getMaxScaleOnAxis();
               if (newScale != _videoScale) {
                 setState(() => _videoScale = newScale);
                 widget.onZoomChanged(newScale <= 1.01);
               }
             },
             onInteractionEnd: (details) {
-              final newScale =
-                  _videoTransformationController.value
-                      .getMaxScaleOnAxis();
-              if (newScale <= 1.01)
-                widget.onZoomChanged(true);
+              final newScale = _videoTransformationController.value
+                  .getMaxScaleOnAxis();
+              if (newScale <= 1.01) widget.onZoomChanged(true);
             },
             child: Center(
               child: AspectRatio(
@@ -1046,18 +1098,13 @@ class _RealVideoPlayerWidgetState
                         Expanded(
                           flex: 3,
                           child: GestureDetector(
-                            behavior:
-                                HitTestBehavior.translucent,
+                            behavior: HitTestBehavior.translucent,
                             onTap: () {
-                              widget.onToggleUI(
-                                  !widget.showUI);
-                              if (!widget.showUI)
-                                _startHideTimer();
+                              widget.onToggleUI(!widget.showUI);
+                              if (!widget.showUI) _startHideTimer();
                             },
-                            onDoubleTap: () =>
-                                _skip(backwards: true),
-                            onLongPressStart:
-                                _onSpeedHoldStart,
+                            onDoubleTap: () => _skip(backwards: true),
+                            onLongPressStart: _onSpeedHoldStart,
                             onLongPressEnd: _onSpeedHoldEnd,
                             child: Container(),
                           ),
@@ -1065,22 +1112,15 @@ class _RealVideoPlayerWidgetState
                         Expanded(
                           flex: 4,
                           child: GestureDetector(
-                            behavior:
-                                HitTestBehavior.translucent,
+                            behavior: HitTestBehavior.translucent,
                             onTap: () {
-                              widget.onToggleUI(
-                                  !widget.showUI);
-                              if (!widget.showUI)
-                                _startHideTimer();
+                              widget.onToggleUI(!widget.showUI);
+                              if (!widget.showUI) _startHideTimer();
                             },
-                            onDoubleTapDown: (details) {
-                              _videoDoubleTapDetails =
-                                  details;
-                            },
-                            onDoubleTap:
-                                _handleVideoDoubleTap,
-                            onLongPressStart:
-                                _onSpeedHoldStart,
+                            onDoubleTapDown: (d) =>
+                                _videoDoubleTapDetails = d,
+                            onDoubleTap: _handleVideoDoubleTap,
+                            onLongPressStart: _onSpeedHoldStart,
                             onLongPressEnd: _onSpeedHoldEnd,
                             child: Container(),
                           ),
@@ -1088,18 +1128,13 @@ class _RealVideoPlayerWidgetState
                         Expanded(
                           flex: 3,
                           child: GestureDetector(
-                            behavior:
-                                HitTestBehavior.translucent,
+                            behavior: HitTestBehavior.translucent,
                             onTap: () {
-                              widget.onToggleUI(
-                                  !widget.showUI);
-                              if (!widget.showUI)
-                                _startHideTimer();
+                              widget.onToggleUI(!widget.showUI);
+                              if (!widget.showUI) _startHideTimer();
                             },
-                            onDoubleTap: () =>
-                                _skip(backwards: false),
-                            onLongPressStart:
-                                _onSpeedHoldStart,
+                            onDoubleTap: () => _skip(backwards: false),
+                            onLongPressStart: _onSpeedHoldStart,
                             onLongPressEnd: _onSpeedHoldEnd,
                             child: Container(),
                           ),
@@ -1112,7 +1147,7 @@ class _RealVideoPlayerWidgetState
             ),
           ),
 
-          // Skip indicators
+          // ── Skip indicators ─────────────────────────────────────────────────
           if (_showLeftIndicator)
             Positioned(
               left: 45,
@@ -1169,7 +1204,7 @@ class _RealVideoPlayerWidgetState
               ),
             ),
 
-          // 2× speed indicator
+          // ── 2× speed indicator ──────────────────────────────────────────────
           if (_isSpeedHeld)
             Positioned(
               top: 20,
@@ -1181,8 +1216,7 @@ class _RealVideoPlayerWidgetState
                     color: Colors.black.withOpacity(0.65),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                        color: const Color(0xFF4FC3F7)
-                            .withOpacity(0.6),
+                        color: const Color(0xFF4FC3F7).withOpacity(0.6),
                         width: 1),
                   ),
                   child: const Row(
@@ -1203,13 +1237,13 @@ class _RealVideoPlayerWidgetState
               ),
             ),
 
-          // Stacked Bottom Controls (Seek bar -> Start time & Duration -> Options)
+          // ── Bottom controls ─────────────────────────────────────────────────
           AnimatedPositioned(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOut,
             left: 0,
             right: 0,
-            bottom: widget.showUI ? 0 : -140,
+            bottom: widget.showUI ? 0 : -160,
             child: Container(
               padding: EdgeInsets.only(
                 top: 12,
@@ -1222,7 +1256,7 @@ class _RealVideoPlayerWidgetState
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Row 1: Full-width Slider (Seek Bar)
+                  // Row 1: Seek bar
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       activeTrackColor: const Color(0xFF4FC3F7),
@@ -1239,15 +1273,13 @@ class _RealVideoPlayerWidgetState
                       value: _sliderValue.clamp(0.0, 1.0),
                       onChanged: (value) {
                         _showControlsAndResetTimer();
+                        _hasAutoAdvanced = false;
                         setState(() {
-                          _isDragging = true;
+                          _isDragging  = true;
                           _sliderValue = value;
                         });
                         final now = DateTime.now();
-                        if (now
-                                .difference(_lastSeekTime)
-                                .inMilliseconds >
-                            100) {
+                        if (now.difference(_lastSeekTime).inMilliseconds > 100) {
                           _lastSeekTime = now;
                           final targetMs =
                               (value * _duration.inMilliseconds).toInt();
@@ -1256,6 +1288,7 @@ class _RealVideoPlayerWidgetState
                         }
                       },
                       onChangeEnd: (value) {
+                        _hasAutoAdvanced = false;
                         final targetMs =
                             (value * _duration.inMilliseconds).toInt();
                         _controller
@@ -1267,30 +1300,27 @@ class _RealVideoPlayerWidgetState
                       },
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
 
-                  // Row 2: Timestamps (Start Time - Duration)
+                  // Row 2: Timestamps
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        _formatDuration(_position),
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 11),
-                      ),
-                      Text(
-                        _formatDuration(_duration),
-                        style: const TextStyle(
-                            color: Color(0xFF7A8899), fontSize: 11),
-                      ),
+                      Text(_formatDuration(_position),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 11)),
+                      Text(_formatDuration(_duration),
+                          style: const TextStyle(
+                              color: Color(0xFF7A8899), fontSize: 11)),
                     ],
                   ),
                   const SizedBox(height: 12),
 
-                  // Row 3: Options (Mute, Loop, Speed selector)
+                  // Row 3: Mute · Loop · Speed · Skip
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      // Mute
                       IconButton(
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -1301,7 +1331,9 @@ class _RealVideoPlayerWidgetState
                         ),
                         onPressed: _toggleMute,
                       ),
-                      const SizedBox(width: 24),
+                      const SizedBox(width: 20),
+
+                      // Loop
                       IconButton(
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -1314,50 +1346,63 @@ class _RealVideoPlayerWidgetState
                         ),
                         onPressed: _toggleLoop,
                       ),
-                      const SizedBox(width: 24),
+                      const SizedBox(width: 20),
+
+                      // Playback speed
                       Theme(
-                        data: Theme.of(context).copyWith(
-                          cardColor: Colors.grey[900],
-                        ),
+                        data: Theme.of(context)
+                            .copyWith(cardColor: Colors.grey[900]),
                         child: PopupMenuButton<double>(
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                           initialValue: _playbackSpeed,
                           onSelected: _setPlaybackSpeed,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.white24),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '${_playbackSpeed}x',
-                              style: const TextStyle(
-                                color: Color(0xFF4FC3F7),
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                          child: _ControlChip(
+                            label: '${_playbackSpeed}x',
                           ),
                           itemBuilder: (context) =>
                               [0.5, 1.0, 1.25, 1.5, 2.0].map((speed) {
                             return PopupMenuItem<double>(
                               value: speed,
                               height: 36,
-                              child: Text(
-                                '${speed}x',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: _playbackSpeed == speed
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
-                              ),
+                              child: Text('${speed}x',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: _playbackSpeed == speed
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  )),
                             );
                           }).toList(),
                         ),
+                      ),
+                      const SizedBox(width: 20),
+
+                      // Skip seconds (moved from top bar)
+                      PopupMenuButton<int>(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        initialValue: widget.skipSeconds,
+                        onSelected: widget.onSkipSecondsChanged,
+                        child: _ControlChip(
+                          label: '±${widget.skipSeconds}s',
+                        ),
+                        itemBuilder: (context) =>
+                            [5, 10, 15, 30].map((s) {
+                          return PopupMenuItem<int>(
+                            value: s,
+                            height: 36,
+                            child: Text('Skip ${s}s',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: widget.skipSeconds == s
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                )),
+                          );
+                        }).toList(),
                       ),
                     ],
                   ),
@@ -1366,7 +1411,7 @@ class _RealVideoPlayerWidgetState
             ),
           ),
 
-          // Centre play/pause button
+          // ── Centre play/pause button ────────────────────────────────────────
           if (widget.showUI)
             Center(
               child: GestureDetector(
@@ -1400,3 +1445,26 @@ class _RealVideoPlayerWidgetState
   }
 }
 
+// ── Small pill-shaped chip for bottom controls ─────────────────────────────────
+
+class _ControlChip extends StatelessWidget {
+  final String label;
+  const _ControlChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.white24),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF4FC3F7),
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+}
