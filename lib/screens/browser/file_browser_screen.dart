@@ -516,7 +516,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       appBar: _buildAppBar(context, filteredDirs, filteredFiles),
       body: Column(
         children: [
-          if (_pathStack.length > 1)
             BreadcrumbBar(stack: _pathStack, onTap: _jumpTo),
           _StatsBar(
             dirCount: filteredDirs.length,
@@ -642,12 +641,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         children: [
           Text(widget.container.displayName,
               style: const TextStyle(fontSize: 14)),
-          if (!_atRoot)
-            Text(
-              _pathStack.skip(1).map((s) => s.label).join(' › '),
-              style:
-                  TextStyle(fontSize: 11, color: cs.primary, height: 1.3),
-            ),
         ],
       ),
       actions: [
@@ -823,7 +816,7 @@ class _StatsBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       color: cs.surface,
       child: Row(
         children: [
