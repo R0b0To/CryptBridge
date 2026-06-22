@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../services/vaultexplorer_api.dart';
 import '../../services/saved_containers.dart';
 import '../../models/mounted_container.dart';
+import '../../utils/validation_utils.dart';
 
 class UnlockSheet extends StatefulWidget {
   final ValueChanged<MountedContainer> onMounted;
@@ -10,9 +11,9 @@ class UnlockSheet extends StatefulWidget {
   final String? initialName;
 
   const UnlockSheet({
-    Key? key, 
-    required this.onMounted, 
-    this.initialUri, 
+    Key? key,
+    required this.onMounted,
+    this.initialUri,
     this.initialName,
   }) : super(key: key);
 
@@ -48,7 +49,7 @@ class _UnlockSheetState extends State<UnlockSheet> {
   }
 
   Future<void> _pickFile() async {
-    if (widget.initialUri != null) return; // Prevent picking if locked to a saved one
+    if (widget.initialUri != null) return;
 
     try {
       final result = await vaultExplorerApi.pickContainer();
@@ -80,8 +81,9 @@ class _UnlockSheetState extends State<UnlockSheet> {
     });
 
     try {
-      final pim =
-          _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0;
+      // clampPim guards against absurdly large PBKDF2 iteration counts.
+      final pim = clampPim(
+          _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0);
       final name = _selectedName ?? 'Container';
 
       final result = await vaultExplorerApi.unlockContainer(
@@ -165,11 +167,13 @@ class _UnlockSheetState extends State<UnlockSheet> {
               ),
               const SizedBox(height: 20),
               Text(
-                widget.initialUri != null ? 'Unlock Container' : 'Mount Container',
+                widget.initialUri != null
+                    ? 'Unlock Container'
+                    : 'Mount Container',
                 style: Theme.of(context)
                     .textTheme
                     .titleMedium
-                    ?.copyWith(fontSize: 17)
+                    ?.copyWith(fontSize: 17),
               ),
               const SizedBox(height: 12),
 
@@ -202,8 +206,7 @@ class _UnlockSheetState extends State<UnlockSheet> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          _selectedName ??
-                              'Select VeraCrypt container…',
+                          _selectedName ?? 'Select VeraCrypt container…',
                           style: TextStyle(
                               color: _selectedUri != null
                                   ? cs.onSurface
@@ -212,7 +215,8 @@ class _UnlockSheetState extends State<UnlockSheet> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (_selectedUri != null && widget.initialUri == null) ...[
+                      if (_selectedUri != null &&
+                          widget.initialUri == null) ...[
                         GestureDetector(
                           onTap: () => setState(() {
                             _selectedUri = null;
@@ -224,8 +228,10 @@ class _UnlockSheetState extends State<UnlockSheet> {
                         const SizedBox(width: 8),
                         Icon(Icons.check_circle,
                             size: 16, color: cs.primary),
-                      ] else if (_selectedUri != null && widget.initialUri != null) ...[
-                        Icon(Icons.lock_outline, size: 16, color: cs.primary),
+                      ] else if (_selectedUri != null &&
+                          widget.initialUri != null) ...[
+                        Icon(Icons.lock_outline,
+                            size: 16, color: cs.primary),
                       ],
                     ],
                   ),
@@ -269,13 +275,18 @@ class _UnlockSheetState extends State<UnlockSheet> {
                   children: [
                     Checkbox(
                       value: _remember,
-                      onChanged: (val) => setState(() => _remember = val ?? false),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (val) =>
+                          setState(() => _remember = val ?? false),
+                      materialTapTargetSize:
+                          MaterialTapTargetSize.shrinkWrap,
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
-                      onTap: () => setState(() => _remember = !_remember),
-                      child: const Text('Remember container on dashboard', style: TextStyle(fontSize: 13)),
+                      onTap: () =>
+                          setState(() => _remember = !_remember),
+                      child: const Text(
+                          'Remember container on dashboard',
+                          style: TextStyle(fontSize: 13)),
                     ),
                   ],
                 ),
@@ -310,7 +321,8 @@ class _UnlockSheetState extends State<UnlockSheet> {
               FilledButton(
                 onPressed: _loading ? null : _unlock,
                 style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6)),
                 ),

@@ -225,4 +225,4 @@ class VaultExplorerApi {
   }
 }
 
-const vaultExplorerApi = VaultExplorerApi();
+final vaultExplorerApi = VaultExplorerApi();

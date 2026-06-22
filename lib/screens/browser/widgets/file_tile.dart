@@ -1,97 +1,61 @@
 import 'package:flutter/material.dart';
+import '../../../utils/file_type_utils.dart';
 
 class FileTile extends StatelessWidget {
   final String name;
+
+  /// Optional second-line label (e.g. formatted file size).
+  final String? subtitle;
+
   final VoidCallback onTap;
-  final VoidCallback? onLongPress; // Added onLongPress callback
+  final VoidCallback? onLongPress;
+
+  /// When true the tile renders in multi-select mode (checkbox trailing icon,
+  /// selection-highlight background).
+  final bool selectionMode;
+  final bool selected;
 
   const FileTile({
     Key? key,
     required this.name,
+    this.subtitle,
     required this.onTap,
-    this.onLongPress, // Added onLongPress callback
+    this.onLongPress,
+    this.selectionMode = false,
+    this.selected = false,
   }) : super(key: key);
-
-  static IconData _iconFor(String name) {
-    final ext = name.split('.').last.toLowerCase();
-    switch (ext) {
-      case 'pdf':
-        return Icons.picture_as_pdf_outlined;
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'webp':
-        return Icons.image_outlined;
-      case 'mp4':
-      case 'mov':
-      case 'avi':
-      case 'mkv':
-        return Icons.ondemand_video_outlined;
-      case 'mp3':
-      case 'flac':
-      case 'wav':
-      case 'm4a':
-        return Icons.audio_file_outlined;
-      case 'txt':
-      case 'md':
-      case 'csv':
-        return Icons.article_outlined;
-      case 'zip':
-      case 'gz':
-      case 'tar':
-      case '7z':
-        return Icons.archive_outlined;
-      default:
-        return Icons.insert_drive_file_outlined;
-    }
-  }
-
-  static Color _colorFor(String name) {
-    final ext = name.split('.').last.toLowerCase();
-    switch (ext) {
-      case 'pdf':
-        return const Color(0xFFEF5350);
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'webp':
-        return const Color(0xFF26C6DA);
-      case 'mp4':
-      case 'mov':
-      case 'avi':
-      case 'mkv':
-      case 'webm':
-        return const Color(0xFF7E57C2);
-      case 'mp3':
-      case 'flac':
-      case 'wav':
-      case 'm4a':
-        return const Color(0xFF66BB6A);
-      case 'txt':
-      case 'md':
-      case 'csv':
-        return const Color(0xFF78909C);
-      default:
-        return const Color(0xFF546E7A);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Icon(_iconFor(name), size: 20, color: _colorFor(name)),
-      title: Text(name, style: Theme.of(context).textTheme.bodyMedium),
-      trailing: Icon(
-        Icons.more_horiz,
-        size: 16,
-        color: Theme.of(context).colorScheme.outline,
+    final cs = Theme.of(context).colorScheme;
+
+    return Container(
+      color: selected
+          ? cs.primaryContainer.withOpacity(0.35)
+          : Colors.transparent,
+      child: ListTile(
+        dense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        leading: Icon(iconForFile(name), size: 20, color: colorForFile(name)),
+        title: Text(name, style: Theme.of(context).textTheme.bodyMedium),
+        subtitle: subtitle != null
+            ? Text(subtitle!,
+                style:
+                    const TextStyle(fontSize: 11, color: Colors.grey))
+            : null,
+        trailing: selectionMode
+            ? Icon(
+                selected
+                    ? Icons.check_circle
+                    : Icons.radio_button_unchecked,
+                size: 18,
+                color: selected ? cs.primary : cs.outline,
+              )
+            : Icon(Icons.more_horiz, size: 16, color: cs.outline),
+        onTap: onTap,
+        onLongPress: onLongPress,
       ),
-      onTap: onTap,
-      onLongPress: onLongPress, // Registers long press event
     );
   }
 }

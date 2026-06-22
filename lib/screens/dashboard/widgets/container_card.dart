@@ -43,7 +43,8 @@ class ContainerCard extends StatelessWidget {
         onTap: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => FileBrowserScreen(container: container)),
+            MaterialPageRoute(
+                builder: (_) => FileBrowserScreen(container: container)),
           );
           onReturn();
         },
@@ -52,6 +53,7 @@ class ContainerCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── Header row ──────────────────────────────────────────────
               Row(
                 children: [
                   Container(
@@ -61,8 +63,8 @@ class ContainerCard extends StatelessWidget {
                       color: cs.primaryContainer,
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Icon(Icons.folder_zip,
-                        size: 18, color: cs.primary),
+                    child:
+                        Icon(Icons.folder_zip, size: 18, color: cs.primary),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -71,17 +73,16 @@ class ContainerCard extends StatelessWidget {
                       children: [
                         Text(
                           container.displayName,
-                          style:
-                              Theme.of(context).textTheme.titleMedium,
+                          style: Theme.of(context).textTheme.titleMedium,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
                         Text(
                           hasSpaceData
-                              ? '${FormatUtils.formatBytes(container.freeSpace)} free of ${FormatUtils.formatBytes(container.totalSpace)}'
+                              ? '${formatBytes(container.freeSpace)} free '
+                                  'of ${formatBytes(container.totalSpace)}'
                               : 'Volume ${container.volId}',
-                          style:
-                              Theme.of(context).textTheme.bodySmall,
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
@@ -90,6 +91,8 @@ class ContainerCard extends StatelessWidget {
                       container: container, onLocked: onLocked),
                 ],
               ),
+
+              // ── Storage usage bar ────────────────────────────────────────
               if (hasSpaceData) ...[
                 const SizedBox(height: 12),
                 ClipRRect(
@@ -98,14 +101,16 @@ class ContainerCard extends StatelessWidget {
                     value: usedFraction,
                     minHeight: 3,
                     backgroundColor: cs.surfaceVariant,
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(barColor),
+                    valueColor: AlwaysStoppedAnimation<Color>(barColor),
                   ),
                 ),
               ],
+
               const SizedBox(height: 14),
               const Divider(),
               const SizedBox(height: 12),
+
+              // ── Stat row ─────────────────────────────────────────────────
               Row(
                 children: [
                   _StatChip(
@@ -138,6 +143,8 @@ class ContainerCard extends StatelessWidget {
   }
 }
 
+// ── Stat chip ─────────────────────────────────────────────────────────────────
+
 class _StatChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -156,6 +163,8 @@ class _StatChip extends StatelessWidget {
     );
   }
 }
+
+// ── Lock button ───────────────────────────────────────────────────────────────
 
 class _LockButton extends StatefulWidget {
   final MountedContainer container;
@@ -205,6 +214,8 @@ class _LockButtonState extends State<_LockButton> {
   }
 }
 
+// ── Saved Container Card ──────────────────────────────────────────────────────
+
 class SavedContainerCard extends StatelessWidget {
   final String name;
   final String uri;
@@ -222,7 +233,7 @@ class SavedContainerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    
+
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -267,7 +278,7 @@ class SavedContainerCard extends StatelessWidget {
               ),
               IconButton(
                 onPressed: onForget,
-                tooltip: 'Forget container',
+                tooltip: 'Remove from dashboard',
                 icon: Icon(Icons.close, color: cs.outline),
               ),
             ],

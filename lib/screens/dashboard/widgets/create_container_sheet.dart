@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../services/vaultexplorer_api.dart';
+import '../../../utils/validation_utils.dart';
 
 class CreateContainerSheet extends StatefulWidget {
   const CreateContainerSheet({Key? key}) : super(key: key);
 
   @override
-  State<CreateContainerSheet> createState() => _CreateContainerSheetState();
+  State<CreateContainerSheet> createState() =>
+      _CreateContainerSheetState();
 }
 
 class _CreateContainerSheetState extends State<CreateContainerSheet> {
@@ -14,9 +16,9 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
   final _sizeCtrl = TextEditingController(text: '10');
   final _passwordCtrl = TextEditingController();
   final _pimCtrl = TextEditingController();
-  
+
   String _sizeUnit = 'MB';
-  String _fileSystem = 'FAT'; 
+  String _fileSystem = 'FAT'; // FAT (FAT32) or exFAT
   bool _obscure = true;
   bool _loading = false;
   String? _error;
@@ -45,20 +47,19 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
       return;
     }
 
-    final pim = _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0;
-    if (pim < 0 || pim > 9999) {
-      setState(() => _error = 'PIM must be a positive number up to 9999');
-      return;
-    }
-
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      final multiplier = _sizeUnit == 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024;
+      final multiplier =
+          _sizeUnit == 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024;
       final sizeBytes = (sizeVal * multiplier).round();
+
+      // clampPim guards against absurdly large PBKDF2 iteration counts.
+      final pim = clampPim(
+          _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0);
 
       final success = await vaultExplorerApi.createContainer(
         displayName: _nameCtrl.text,
@@ -72,11 +73,13 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
         if (mounted) {
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Container file created successfully.')),
+            const SnackBar(
+                content: Text('Container file created successfully.')),
           );
         }
       } else {
-        setState(() => _error = 'Container creation cancelled or failed.');
+        setState(
+            () => _error = 'Container creation cancelled or failed.');
       }
     } on PlatformException catch (e) {
       setState(() => _error = e.message ?? 'Unknown error occurred');
@@ -91,10 +94,11 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
     final mq = MediaQuery.of(context);
 
     return Container(
-      padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
+      margin: EdgeInsets.only(bottom: mq.viewInsets.bottom),
       decoration: BoxDecoration(
         color: cs.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(16)),
         border: Border.all(color: cs.outline.withOpacity(0.5)),
       ),
       child: SafeArea(
@@ -118,26 +122,37 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
                 ),
                 const SizedBox(height: 20),
                 Text('Create VeraCrypt Container',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 17)),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontSize: 17)),
                 const SizedBox(height: 16),
+
+                // File name
                 TextField(
                   controller: _nameCtrl,
                   decoration: const InputDecoration(
                     labelText: 'File Name',
-                    prefixIcon: Icon(Icons.drive_file_rename_outline, size: 18),
+                    prefixIcon: Icon(Icons.drive_file_rename_outline,
+                        size: 18),
                   ),
                 ),
                 const SizedBox(height: 12),
+
+                // Size and unit selection
                 Row(
                   children: [
                     Expanded(
                       flex: 2,
                       child: TextField(
                         controller: _sizeCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType:
+                            const TextInputType.numberWithOptions(
+                                decimal: true),
                         decoration: const InputDecoration(
                           labelText: 'Container Size',
-                          prefixIcon: Icon(Icons.sd_storage_outlined, size: 18),
+                          prefixIcon:
+                              Icon(Icons.sd_storage_outlined, size: 18),
                         ),
                       ),
                     ),
@@ -145,29 +160,35 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
                     Expanded(
                       child: DropdownButtonFormField<String>(
                         value: _sizeUnit,
-                        decoration: const InputDecoration(
-                          labelText: 'Unit',
-                        ),
+                        decoration:
+                            const InputDecoration(labelText: 'Unit'),
                         items: const [
-                          DropdownMenuItem(value: 'MB', child: Text('MB')),
-                          DropdownMenuItem(value: 'GB', child: Text('GB')),
+                          DropdownMenuItem(
+                              value: 'MB', child: Text('MB')),
+                          DropdownMenuItem(
+                              value: 'GB', child: Text('GB')),
                         ],
                         onChanged: (val) {
-                          if (val != null) setState(() => _sizeUnit = val);
+                          if (val != null)
+                            setState(() => _sizeUnit = val);
                         },
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
+
+                // Password
                 TextField(
                   controller: _passwordCtrl,
                   obscureText: _obscure,
                   decoration: InputDecoration(
                     labelText: 'Password',
-                    prefixIcon: const Icon(Icons.key_outlined, size: 18),
+                    prefixIcon:
+                        const Icon(Icons.key_outlined, size: 18),
                     suffixIcon: IconButton(
-                      onPressed: () => setState(() => _obscure = !_obscure),
+                      onPressed: () =>
+                          setState(() => _obscure = !_obscure),
                       icon: Icon(
                           _obscure
                               ? Icons.visibility_outlined
@@ -177,15 +198,19 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
+
+                // PIM
                 TextField(
                   controller: _pimCtrl,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'PIM (leave blank for default)',
+                    labelText: 'PIM  (leave blank for default)',
                     prefixIcon: Icon(Icons.tune, size: 18),
                   ),
                 ),
                 const SizedBox(height: 12),
+
+                // File System selection
                 DropdownButtonFormField<String>(
                   value: _fileSystem,
                   decoration: const InputDecoration(
@@ -193,13 +218,16 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
                     prefixIcon: Icon(Icons.dns_outlined, size: 18),
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'FAT', child: Text('FAT (FAT32)')),
-                    DropdownMenuItem(value: 'exFAT', child: Text('exFAT')),
+                    DropdownMenuItem(
+                        value: 'FAT', child: Text('FAT (FAT32)')),
+                    DropdownMenuItem(
+                        value: 'exFAT', child: Text('exFAT')),
                   ],
                   onChanged: (val) {
                     if (val != null) setState(() => _fileSystem = val);
                   },
                 ),
+
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Container(
@@ -207,34 +235,46 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
                     decoration: BoxDecoration(
                       color: cs.error.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: cs.error.withOpacity(0.4)),
+                      border: Border.all(
+                          color: cs.error.withOpacity(0.4)),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.error_outline, size: 16, color: cs.error),
+                        Icon(Icons.error_outline,
+                            size: 16, color: cs.error),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(_error!, style: TextStyle(color: cs.error, fontSize: 12)),
+                          child: Text(_error!,
+                              style: TextStyle(
+                                  color: cs.error, fontSize: 12)),
                         ),
                       ],
                     ),
                   ),
                 ],
+
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: _loading ? null : _create,
                   style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6)),
                   ),
                   child: _loading
                       ? const SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(
+                                  Colors.white)),
                         )
-                      : const Text('Create Container', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      : const Text('Create Container',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
