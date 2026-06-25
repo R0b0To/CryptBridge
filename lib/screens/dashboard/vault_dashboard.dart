@@ -26,6 +26,7 @@ class _VaultDashboardState extends State<VaultDashboard>
   final List<MountedContainer> _mounted = [];
   List<Map<String, String>> _saved = [];
   Map<String, ContainerConfig> _configs = {};
+  AppSettings _appSettings = AppSettings();
   bool _actionInFlight = false;
 
   /// Per-container auto-close timers.
@@ -37,6 +38,7 @@ class _VaultDashboardState extends State<VaultDashboard>
     WidgetsBinding.instance.addObserver(this);
     _loadSaved();
     _loadConfigs();
+    _loadAppSettings();
   }
 
   @override
@@ -65,6 +67,11 @@ class _VaultDashboardState extends State<VaultDashboard>
   Future<void> _loadConfigs() async {
     final configs = await AppSettingsService.loadContainerConfigs();
     if (mounted) setState(() => _configs = configs);
+  }
+
+  Future<void> _loadAppSettings() async {
+    final s = await AppSettingsService.loadSettings();
+    if (mounted) setState(() => _appSettings = s);
   }
 
   // ── Auto-close ──────────────────────────────────────────────────────────
@@ -99,6 +106,17 @@ class _VaultDashboardState extends State<VaultDashboard>
   void _onContainerMounted(MountedContainer container) {
     setState(() => _mounted.add(container));
     _scheduleAutoClose(container);
+    // Create a default config for newly seen containers so the doc provider
+    // preference from AppSettings is applied immediately.
+    if (!_configs.containsKey(container.uri)) {
+      final defaultCfg = ContainerConfig(
+        uri: container.uri,
+        label: container.displayName,
+        documentProvider: _appSettings.defaultDocumentProvider,
+      );
+      _configs[container.uri] = defaultCfg;
+      AppSettingsService.saveContainerConfig(defaultCfg);
+    }
   }
 
   void _onContainerLocked(int volId) {
@@ -127,13 +145,12 @@ class _VaultDashboardState extends State<VaultDashboard>
     if (_actionInFlight) return;
     setState(() => _actionInFlight = true);
 
-    // Pre-fill password from config if remembered
+    // Pre-fill password using the deobfuscated value from config.
     String? rememberedPassword;
     if (uri != null) {
       final cfg = _configs[uri];
-      if (cfg?.rememberPassword == true &&
-          cfg?.encryptedPassword?.isNotEmpty == true) {
-        rememberedPassword = cfg!.encryptedPassword;
+      if (cfg?.rememberPassword == true && cfg!.hasPassword) {
+        rememberedPassword = await cfg.getPassword();
       }
     }
 

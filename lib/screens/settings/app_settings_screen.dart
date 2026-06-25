@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:local_auth/local_auth.dart';
 import '../../services/app_settings_service.dart';
 
 class AppSettingsScreen extends StatefulWidget {
@@ -14,13 +14,15 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
   bool _loading = true;
   bool _saving = false;
 
-  // master password editing
-  bool _showMasterPwField = false;
-  final _masterPwCtrl = TextEditingController();
-  final _masterPwConfirmCtrl = TextEditingController();
+  bool _showPwFields = false;
+  final _pwCtrl = TextEditingController();
+  final _pwConfirmCtrl = TextEditingController();
   bool _obscurePw = true;
   bool _obscureConfirm = true;
   String? _pwError;
+
+  bool _biometricAvailable = false;
+  final _localAuth = LocalAuthentication();
 
   @override
   void initState() {
@@ -28,16 +30,34 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _pwCtrl.dispose();
+    _pwConfirmCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final s = await AppSettingsService.loadSettings();
-    if (mounted) setState(() { _settings = s; _loading = false; });
+    bool bioAvail = false;
+    try {
+      bioAvail = await _localAuth.canCheckBiometrics &&
+          await _localAuth.isDeviceSupported();
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _settings = s;
+        _biometricAvailable = bioAvail;
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _save() async {
     setState(() => _saving = true);
     await AppSettingsService.saveSettings(_settings);
-    setState(() => _saving = false);
     if (mounted) {
+      setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Settings saved')),
       );
@@ -50,56 +70,30 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
       if (!enabled) {
         _settings.masterPasswordHash = null;
         _settings.masterPasswordIsFingerprint = false;
-        _showMasterPwField = false;
-        _masterPwCtrl.clear();
-        _masterPwConfirmCtrl.clear();
+        _showPwFields = false;
+        _pwCtrl.clear();
+        _pwConfirmCtrl.clear();
         _pwError = null;
       } else {
-        _showMasterPwField = true;
+        _showPwFields = true;
       }
     });
   }
 
-  void _confirmMasterPassword() {
-    final pw = _masterPwCtrl.text;
-    final confirm = _masterPwConfirmCtrl.text;
-    if (pw.isEmpty) {
-      setState(() => _pwError = 'Password cannot be empty');
-      return;
-    }
-    if (pw != confirm) {
-      setState(() => _pwError = 'Passwords do not match');
-      return;
-    }
-    if (pw.length < 4) {
-      setState(() => _pwError = 'Password must be at least 4 characters');
-      return;
-    }
-    // Simple hash — in production use bcrypt via a plugin
+  void _confirmPassword() {
+    final pw = _pwCtrl.text;
+    final confirm = _pwConfirmCtrl.text;
+    if (pw.isEmpty) { setState(() => _pwError = 'Password cannot be empty'); return; }
+    if (pw.length < 4) { setState(() => _pwError = 'At least 4 characters required'); return; }
+    if (pw != confirm) { setState(() => _pwError = 'Passwords do not match'); return; }
     setState(() {
-      _settings.masterPasswordHash = _simpleHash(pw);
-      _showMasterPwField = false;
+      _settings.masterPasswordHash = AppSettings.hashPassword(pw);
+      _showPwFields = false;
       _pwError = null;
-      _masterPwCtrl.clear();
-      _masterPwConfirmCtrl.clear();
+      _pwCtrl.clear();
+      _pwConfirmCtrl.clear();
     });
-  }
-
-  /// Very basic hash placeholder. Replace with proper crypto if needed.
-  String _simpleHash(String input) {
-    // XOR-fold + decimal encode — not cryptographic, just obfuscation
-    int h = 5381;
-    for (final c in input.codeUnits) {
-      h = ((h << 5) + h) ^ c;
-    }
-    return h.toUnsigned(32).toRadixString(16).padLeft(8, '0');
-  }
-
-  @override
-  void dispose() {
-    _masterPwCtrl.dispose();
-    _masterPwConfirmCtrl.dispose();
-    super.dispose();
+    _save();
   }
 
   @override
@@ -110,19 +104,13 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
       appBar: AppBar(
         title: const Text('App Settings'),
         actions: [
-          if (!_loading)
+          if (!_loading && !_showPwFields)
             TextButton(
               onPressed: _saving ? null : _save,
               child: _saving
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: cs.primary),
-                    )
-                  : Text('Save',
-                      style: TextStyle(
-                          color: cs.primary, fontWeight: FontWeight.w700)),
+                  ? SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary))
+                  : Text('Save', style: TextStyle(color: cs.primary, fontWeight: FontWeight.w700)),
             ),
           const SizedBox(width: 8),
         ],
@@ -132,175 +120,159 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // ── Security section ───────────────────────────────────────
-                _SectionLabel(label: 'SECURITY', cs: cs),
+
+                // ── Security ───────────────────────────────────────────────
+                _SectionLabel('SECURITY', cs),
                 const SizedBox(height: 8),
+                _Card(cs: cs, children: [
 
-                _SettingsCard(
-                  cs: cs,
-                  children: [
-                    _ToggleRow(
-                      icon: Icons.lock_person_outlined,
-                      title: 'Master Password',
-                      subtitle: _settings.useMasterPassword &&
-                              _settings.masterPasswordHash != null
-                          ? 'Set — tap to change'
-                          : 'Lock the app with a password',
-                      value: _settings.useMasterPassword,
-                      cs: cs,
-                      onChanged: _toggleMasterPassword,
+                  _ToggleRow(
+                    icon: Icons.lock_person_outlined,
+                    title: 'Master Password',
+                    subtitle: _settings.useMasterPassword && _settings.masterPasswordHash != null
+                        ? 'Active — tap toggle to remove'
+                        : 'Require a password to open the app',
+                    value: _settings.useMasterPassword,
+                    cs: cs,
+                    onChanged: _toggleMasterPassword,
+                  ),
+
+                  // Password entry fields
+                  if (_settings.useMasterPassword && _showPwFields) ...[
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _pwCtrl,
+                      obscureText: _obscurePw,
+                      decoration: InputDecoration(
+                        labelText: _settings.masterPasswordHash != null
+                            ? 'New password' : 'Master password',
+                        prefixIcon: const Icon(Icons.password, size: 18),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscurePw ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18),
+                          onPressed: () => setState(() => _obscurePw = !_obscurePw),
+                        ),
+                      ),
                     ),
-
-                    if (_settings.useMasterPassword && _showMasterPwField) ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _masterPwCtrl,
-                        obscureText: _obscurePw,
-                        decoration: InputDecoration(
-                          labelText: 'New master password',
-                          prefixIcon:
-                              const Icon(Icons.password, size: 18),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscurePw
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                              size: 18,
-                            ),
-                            onPressed: () =>
-                                setState(() => _obscurePw = !_obscurePw),
-                          ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _pwConfirmCtrl,
+                      obscureText: _obscureConfirm,
+                      decoration: InputDecoration(
+                        labelText: 'Confirm password',
+                        prefixIcon: const Icon(Icons.password, size: 18),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18),
+                          onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _masterPwConfirmCtrl,
-                        obscureText: _obscureConfirm,
-                        decoration: InputDecoration(
-                          labelText: 'Confirm password',
-                          prefixIcon:
-                              const Icon(Icons.password, size: 18),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureConfirm
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                              size: 18,
-                            ),
-                            onPressed: () => setState(
-                                () => _obscureConfirm = !_obscureConfirm),
-                          ),
-                        ),
-                      ),
-                      if (_pwError != null) ...[
-                        const SizedBox(height: 8),
-                        Text(_pwError!,
-                            style:
-                                TextStyle(color: cs.error, fontSize: 12)),
-                      ],
-                      const SizedBox(height: 12),
-                      OutlinedButton(
-                        onPressed: _confirmMasterPassword,
-                        child: const Text('Set Master Password'),
-                      ),
+                    ),
+                    if (_pwError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_pwError!, style: TextStyle(color: cs.error, fontSize: 12)),
                     ],
+                    const SizedBox(height: 14),
+                    Row(children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => setState(() {
+                            _showPwFields = false;
+                            _pwCtrl.clear(); _pwConfirmCtrl.clear(); _pwError = null;
+                            // If no hash yet, toggle off entirely
+                            if (_settings.masterPasswordHash == null) {
+                              _settings.useMasterPassword = false;
+                            }
+                          }),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: _confirmPassword,
+                          child: Text(_settings.masterPasswordHash != null ? 'Update' : 'Set Password'),
+                        ),
+                      ),
+                    ]),
+                  ],
 
-                    if (_settings.useMasterPassword &&
-                        !_showMasterPwField &&
-                        _settings.masterPasswordHash != null) ...[
-                      const SizedBox(height: 4),
-                      const Divider(),
+                  // Change / biometric options (only when PW is set and not in edit mode)
+                  if (_settings.useMasterPassword &&
+                      _settings.masterPasswordHash != null &&
+                      !_showPwFields) ...[
+                    const Divider(height: 24),
+
+                    if (_biometricAvailable)
                       _ToggleRow(
                         icon: Icons.fingerprint,
-                        title: 'Biometric unlock',
-                        subtitle: 'Use fingerprint instead of typing',
+                        title: 'Biometric Unlock',
+                        subtitle: 'Use fingerprint or face instead of typing',
                         value: _settings.masterPasswordIsFingerprint,
                         cs: cs,
-                        onChanged: (v) => setState(
-                            () => _settings.masterPasswordIsFingerprint = v),
+                        onChanged: (v) => setState(() => _settings.masterPasswordIsFingerprint = v),
                       ),
-                    ],
-
-                    if (_settings.useMasterPassword &&
-                        !_showMasterPwField &&
-                        _settings.masterPasswordHash != null) ...[
-                      const SizedBox(height: 8),
-                      const Divider(),
-                      TextButton.icon(
-                        onPressed: () => setState(() {
-                          _showMasterPwField = true;
-                          _pwError = null;
-                        }),
-                        icon: const Icon(Icons.edit, size: 16),
-                        label: const Text('Change master password'),
-                      ),
-                    ],
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // ── Integration section ────────────────────────────────────
-                _SectionLabel(label: 'INTEGRATION', cs: cs),
-                const SizedBox(height: 8),
-
-                _SettingsCard(
-                  cs: cs,
-                  children: [
-                    _ToggleRow(
-                      icon: Icons.folder_shared_outlined,
-                      title: 'Mount as Document Provider',
-                      subtitle:
-                          'Expose containers in Android\'s file picker so other apps can open files directly',
-                      value: _settings.mountAsDocumentProvider,
-                      cs: cs,
-                      onChanged: (v) =>
-                          setState(() => _settings.mountAsDocumentProvider = v),
-                    ),
-                    if (_settings.mountAsDocumentProvider) ...[
-                      const SizedBox(height: 6),
+                    if (!_biometricAvailable)
                       Padding(
-                        padding: const EdgeInsets.only(left: 30),
-                        child: Text(
-                          'Containers appear under "VaultExplorer" in the '
-                          'system file picker when unlocked. Disable if you '
-                          'want stricter isolation.',
-                          style: TextStyle(
-                              fontSize: 11, color: cs.outline, height: 1.5),
-                        ),
+                        padding: const EdgeInsets.only(left: 30, top: 4),
+                        child: Text('Biometric not available on this device',
+                            style: TextStyle(fontSize: 11, color: cs.outline)),
                       ),
-                    ],
+
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () => setState(() { _showPwFields = true; _pwError = null; }),
+                      icon: const Icon(Icons.edit, size: 16),
+                      label: const Text('Change password'),
+                    ),
                   ],
-                ),
+                ]),
 
                 const SizedBox(height: 24),
 
-                // ── About section ──────────────────────────────────────────
-                _SectionLabel(label: 'ABOUT', cs: cs),
+                // ── Integration ────────────────────────────────────────────
+                _SectionLabel('INTEGRATION', cs),
                 const SizedBox(height: 8),
+                _Card(cs: cs, children: [
+                  _ToggleRow(
+                    icon: Icons.folder_shared_outlined,
+                    title: 'Document Provider (default)',
+                    subtitle: 'New containers will be exposed in Android\'s '
+                        'file picker by default. Each container can override this.',
+                    value: _settings.defaultDocumentProvider,
+                    cs: cs,
+                    onChanged: (v) => setState(() => _settings.defaultDocumentProvider = v),
+                  ),
+                ]),
 
-                _SettingsCard(
-                  cs: cs,
-                  children: [
-                    _InfoRow(
-                        label: 'Version', value: '0.8.4', cs: cs),
-                    const Divider(),
-                    _InfoRow(
-                        label: 'Encryption',
-                        value: 'AES-256-XTS (VeraCrypt)',
-                        cs: cs),
-                    const Divider(),
-                    _InfoRow(
-                        label: 'Key derivation',
-                        value: 'PBKDF2-SHA512',
-                        cs: cs),
-                    const Divider(),
-                    _InfoRow(
-                        label: 'Filesystem',
-                        value: 'FAT32 / exFAT via FatFs',
-                        cs: cs),
-                  ],
-                ),
+                const SizedBox(height: 24),
+
+                // ── Media ──────────────────────────────────────────────────
+                _SectionLabel('MEDIA', cs),
+                const SizedBox(height: 8),
+                _Card(cs: cs, children: [
+                  _ToggleRow(
+                    icon: Icons.play_circle_outline,
+                    title: 'Auto-play videos',
+                    subtitle: 'Start playing automatically when opening a video',
+                    value: _settings.videoAutoPlay,
+                    cs: cs,
+                    onChanged: (v) => setState(() => _settings.videoAutoPlay = v),
+                  ),
+                ]),
+
+                const SizedBox(height: 24),
+
+                // ── About ──────────────────────────────────────────────────
+                _SectionLabel('ABOUT', cs),
+                const SizedBox(height: 8),
+                _Card(cs: cs, children: [
+                  _InfoRow('Version', '0.8.4', cs),
+                  const Divider(),
+                  _InfoRow('Encryption', 'AES-256-XTS (VeraCrypt)', cs),
+                  const Divider(),
+                  _InfoRow('Key derivation', 'PBKDF2-SHA512', cs),
+                  const Divider(),
+                  _InfoRow('Filesystem', 'FAT32 / exFAT via FatFs', cs),
+                ]),
 
                 const SizedBox(height: 32),
               ],
@@ -309,43 +281,30 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
   }
 }
 
-// ── Shared sub-widgets ─────────────────────────────────────────────────────
+// ── Sub-widgets ───────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String label;
   final ColorScheme cs;
-  const _SectionLabel({required this.label, required this.cs});
-
+  const _SectionLabel(this.label, this.cs);
   @override
-  Widget build(BuildContext context) => Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.4,
-          color: cs.outline,
-        ),
-      );
+  Widget build(BuildContext context) => Text(label,
+      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+          letterSpacing: 1.4, color: cs.outline));
 }
 
-class _SettingsCard extends StatelessWidget {
+class _Card extends StatelessWidget {
   final List<Widget> children;
   final ColorScheme cs;
-  const _SettingsCard({required this.children, required this.cs});
-
+  const _Card({required this.children, required this.cs});
   @override
   Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(
-          color: cs.surface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: cs.outline),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: children,
-        ),
-      );
+      decoration: BoxDecoration(
+        color: cs.surface, borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: cs.outline),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children));
 }
 
 class _ToggleRow extends StatelessWidget {
@@ -355,70 +314,36 @@ class _ToggleRow extends StatelessWidget {
   final bool value;
   final ColorScheme cs;
   final ValueChanged<bool> onChanged;
-
-  const _ToggleRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.cs,
-    required this.onChanged,
-  });
-
+  const _ToggleRow({required this.icon, required this.title,
+      required this.subtitle, required this.value, required this.cs,
+      required this.onChanged});
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Icon(icon, size: 18, color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 2),
-                  Text(subtitle,
-                      style: TextStyle(
-                          fontSize: 11, color: cs.outline, height: 1.4)),
-                ],
-              ),
-            ),
-            Switch(
-              value: value,
-              onChanged: onChanged,
-              activeColor: cs.primary,
-            ),
-          ],
-        ),
-      );
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 18, color: cs.onSurfaceVariant)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 2),
+          Text(subtitle, style: TextStyle(fontSize: 11, color: cs.outline, height: 1.4)),
+        ])),
+        Switch(value: value, onChanged: onChanged, activeColor: cs.primary),
+      ]));
 }
 
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
   final ColorScheme cs;
-  const _InfoRow(
-      {required this.label, required this.value, required this.cs});
-
+  const _InfoRow(this.label, this.value, this.cs);
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            Text(label,
-                style: TextStyle(fontSize: 12, color: cs.outline)),
-            const Spacer(),
-            Text(value,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w500)),
-          ],
-        ),
-      );
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        Text(label, style: TextStyle(fontSize: 12, color: cs.outline)),
+        const Spacer(),
+        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+      ]));
 }

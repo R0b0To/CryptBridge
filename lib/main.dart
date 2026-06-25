@@ -2,17 +2,16 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'theme.dart';
-import 'screens/dashboard/vault_dashboard.dart';
+import 'screens/lock/lock_gate_screen.dart';
 
 void main() {
-  // Silently neutralize third-party video player disposal race conditions
   PlatformDispatcher.instance.onError = (error, stack) {
     final errStr = error.toString();
-    if (errStr.contains('Cannot add event after closing') || 
+    if (errStr.contains('Cannot add event after closing') ||
         errStr.contains('video_player_mdk')) {
-      return true; // Silence this warning to keep your console completely clean
+      return true;
     }
-    return false; // Propagate all other actual errors
+    return false;
   };
 
   fvp.registerWith(options: {
@@ -31,7 +30,9 @@ class VaultExplorerApp extends StatelessWidget {
       title: 'VaultExplorer',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      home: const VaultDashboard(),
+      // LockGateScreen checks settings and either goes to dashboard directly
+      // (no master password set) or shows the unlock UI.
+      home: const LockGateScreen(),
     );
   }
 }

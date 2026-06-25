@@ -98,16 +98,6 @@ class ContainerCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    // Config hint
-                    if (onLongPress != null)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: Tooltip(
-                          message: 'Long-press to configure',
-                          child: Icon(Icons.more_vert,
-                              size: 16, color: cs.outline),
-                        ),
-                      ),
                     _LockButton(
                         container: container, onLocked: onLocked),
                   ],
@@ -130,38 +120,7 @@ class ContainerCard extends StatelessWidget {
                   ),
                 ],
 
-                const SizedBox(height: 14),
-                const Divider(),
-                const SizedBox(height: 10),
 
-                // ── Stats row ───────────────────────────────────────────
-                Row(
-                  children: [
-                    _StatChip(
-                      icon: Icons.insert_drive_file_outlined,
-                      label:
-                          '$fileCount file${fileCount != 1 ? 's' : ''}',
-                    ),
-                    const SizedBox(width: 10),
-                    _StatChip(
-                      icon: Icons.folder_outlined,
-                      label:
-                          '$dirCount folder${dirCount != 1 ? 's' : ''}',
-                    ),
-                    const Spacer(),
-                    Row(children: [
-                      Text('Browse',
-                          style: TextStyle(
-                            color: cs.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          )),
-                      const SizedBox(width: 4),
-                      Icon(Icons.arrow_forward,
-                          size: 13, color: cs.primary),
-                    ]),
-                  ],
-                ),
               ],
             ),
           ),
@@ -171,21 +130,6 @@ class ContainerCard extends StatelessWidget {
   }
 }
 
-class _StatChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _StatChip({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 13, color: cs.outline),
-      const SizedBox(width: 4),
-      Text(label, style: Theme.of(context).textTheme.bodySmall),
-    ]);
-  }
-}
 
 class _LockButton extends StatefulWidget {
   final MountedContainer container;
