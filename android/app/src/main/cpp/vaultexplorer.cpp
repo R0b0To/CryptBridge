@@ -781,17 +781,35 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createContainerNative(
         unsigned char body[448];
         memset(body, 0, sizeof(body));
 
+        // ASCII magic
         body[0] = 'V'; body[1] = 'E'; body[2] = 'R'; body[3] = 'A';
-        body[4] = 0x00; body[5] = 0x05;
-        body[6] = 0x05; body[7] = 0x00;
+        
+        // Volume header format version (2 for standard VeraCrypt)
+        body[4] = 0x00; body[5] = 0x02;
+        
+        // Minimum program version required (0x010b = 267 for VeraCrypt 1.11+)
+        body[6] = 0x01; body[7] = 0x0b;
 
+        // Volume size in bytes (Sector offset 100 -> body[36..43])
         for (int i = 7; i >= 0; --i)
-            body[36 + (7 - i)] = (DATA_OFFSET >> (i * 8)) & 0xFF;
-        for (int i = 7; i >= 0; --i)
-            body[44 + (7 - i)] = (DATA_SIZE >> (i * 8)) & 0xFF;
+            body[36 + (7 - i)] = (VOLUME_SIZE >> (i * 8)) & 0xFF;
 
-        body[56] = 0x00; body[57] = 0x02; body[58] = 0x00; body[59] = 0x00;
-        memcpy(&body[252], combinedMasterKey, 64);
+        // Start offset of master key scope (Sector offset 108 -> body[44..51])
+        for (int i = 7; i >= 0; --i)
+            body[44 + (7 - i)] = (DATA_OFFSET >> (i * 8)) & 0xFF;
+
+        // Encrypted area size within master key scope (Sector offset 116 -> body[52..59])
+        for (int i = 7; i >= 0; --i)
+            body[52 + (7 - i)] = (DATA_SIZE >> (i * 8)) & 0xFF;
+
+        // Sector size (512 bytes) (Sector offset 128 -> body[64..67])
+        body[64] = 0x00;
+        body[65] = 0x00;
+        body[66] = 0x02;
+        body[67] = 0x00;
+
+        // Master keys start at sector offset 256 (body[192..255])
+        memcpy(&body[192], combinedMasterKey, 64);
 
         auto crc32 = [](const unsigned char* data, size_t len) -> uint32_t {
             uint32_t crc = 0xFFFFFFFFu;
@@ -803,13 +821,19 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createContainerNative(
             return crc ^ 0xFFFFFFFFu;
         };
 
-        uint32_t keyCrc = crc32(&body[252], 196);
-        body[ 8] = (keyCrc >> 24) & 0xFF; body[ 9] = (keyCrc >> 16) & 0xFF;
-        body[10] = (keyCrc >>  8) & 0xFF; body[11] = (keyCrc      ) & 0xFF;
+        // Key CRC at sector offset 72 (body[8..11]) covers decrypted bytes 256-511 (body[192..447], size 256)
+        uint32_t keyCrc = crc32(&body[192], 256);
+        body[ 8] = (keyCrc >> 24) & 0xFF; 
+        body[ 9] = (keyCrc >> 16) & 0xFF;
+        body[10] = (keyCrc >>  8) & 0xFF; 
+        body[11] = (keyCrc      ) & 0xFF;
 
+        // Header CRC at sector offset 252 (body[188..191]) covers decrypted bytes 64-251 (body[0..187], size 188)
         uint32_t hdrCrc = crc32(body, 188);
-        body[188] = (hdrCrc >> 24) & 0xFF; body[189] = (hdrCrc >> 16) & 0xFF;
-        body[190] = (hdrCrc >>  8) & 0xFF; body[191] = (hdrCrc      ) & 0xFF;
+        body[188] = (hdrCrc >> 24) & 0xFF; 
+        body[189] = (hdrCrc >> 16) & 0xFF;
+        body[190] = (hdrCrc >>  8) & 0xFF; 
+        body[191] = (hdrCrc      ) & 0xFF;
 
         unsigned char encBody[448];
         {
