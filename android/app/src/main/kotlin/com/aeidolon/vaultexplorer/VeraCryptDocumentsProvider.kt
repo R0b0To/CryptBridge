@@ -1,5 +1,6 @@
 package com.aeidolon.vaultexplorer
 
+import android.content.Context
 import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.database.MatrixCursor
@@ -11,11 +12,18 @@ import android.os.Build
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
+import android.os.ParcelFileDescriptor
+import android.os.ProxyFileDescriptorCallback
+import android.os.storage.StorageManager
 import android.provider.DocumentsContract
 import android.provider.DocumentsProvider
+import android.system.ErrnoException
+import android.system.OsConstants
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 
 class VeraCryptDocumentsProvider : DocumentsProvider() {
 
@@ -249,65 +257,133 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         )
     }
 
-        @Throws(FileNotFoundException::class)
+ @Throws(FileNotFoundException::class)
     override fun openDocument(
         documentId: String?,
         mode: String?,
         signal: CancellationSignal?
-    ): android.os.ParcelFileDescriptor {
+    ): ParcelFileDescriptor {
         val docId = documentId ?: throw FileNotFoundException("No document ID")
         val parts = docId.split(":")
         if (parts.size < 2) throw FileNotFoundException("Invalid document ID")
         val volId = parts[0].toIntOrNull() ?: throw FileNotFoundException("Invalid volume")
         val session = VeraCryptSession.activeSessions[volId] ?: throw FileNotFoundException("No active session")
         val fatPath = parts.drop(2).joinToString(":")
-        val cleanName = fatPath.substringAfterLast("/")
         val isWrite = mode?.contains("w") == true || mode?.contains("r+") == true
-        val tempFile = File(context?.cacheDir, "vc_${volId}_${fatPath.hashCode()}_$cleanName")
 
-        if (isWrite) {
-            tempFile.delete()
-            synchronized(VeraCryptSession.locks[volId]) {
-                VeraCryptEngine.unlockAndExtractNative(getFd(session.uri, "r"), "", 0, fatPath, tempFile.absolutePath, volId)
-            }
+        val storageManager = context?.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
+            ?: throw FileNotFoundException("Could not obtain StorageManager")
 
-            // Updated template to use ${volId}_ instead of $volId_
-            val writeThread = HandlerThread("vc_writeback_${volId}_${System.nanoTime()}").also { it.start() }
-            val bgHandler = Handler(writeThread.looper)
+        // Dedicated background thread for handling incoming sequential read/write block calls
+        val handlerThread = HandlerThread("vc_proxy_${volId}_${System.nanoTime()}").apply { start() }
+        val handler = Handler(handlerThread.looper)
 
-            return android.os.ParcelFileDescriptor.open(
-                tempFile, android.os.ParcelFileDescriptor.MODE_READ_WRITE, bgHandler
-            ) { closeError ->
-                try {
-                    if (closeError == null) {
-                        synchronized(VeraCryptSession.locks[volId]) {
-                            VeraCryptEngine.writeBackFileNative(
-                                getFd(session.uri, "rw"), "", 0, fatPath, tempFile.absolutePath, volId
-                            )
-                        }
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("vaultexplorer", "Write-back error: ${e.javaClass.simpleName}")
-                } finally {
-                    tempFile.delete()
-                    writeThread.quitSafely()
-                }
-            }
-        } else {
-            tempFile.delete()
-            val success = synchronized(VeraCryptSession.locks[volId]) {
-                VeraCryptEngine.unlockAndExtractNative(getFd(session.uri, "r"), "", 0, fatPath, tempFile.absolutePath, volId)
-            }
-            if (!success || !tempFile.exists()) throw FileNotFoundException("Decrypt failed for $fatPath")
+        val callback = VeraCryptProxyCallback(volId, session, fatPath, isWrite, handlerThread)
 
-            val mainHandler = Handler(context!!.mainLooper)
-            return android.os.ParcelFileDescriptor.open(
-                tempFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY, mainHandler
-            ) { tempFile.delete() }
+        try {
+            val parcelMode = ParcelFileDescriptor.parseMode(mode ?: "r")
+            return storageManager.openProxyFileDescriptor(parcelMode, callback, handler)
+        } catch (e: Exception) {
+            handlerThread.quitSafely()
+            throw FileNotFoundException("Failed to open proxy file descriptor: ${e.message}")
         }
     }
 
+    /**
+     * Fully in-memory file bridge. Reads and writes chunks directly to JNI 
+     * without temporary cache files on device storage.
+     */
+    inner class VeraCryptProxyCallback(
+        private val volId: Int,
+        private val session: ContainerSession,
+        private val fatPath: String,
+        private val isWrite: Boolean,
+        private val handlerThread: HandlerThread
+    ) : ProxyFileDescriptorCallback() {
 
+        private var hasChanges = false
+        private var fileSizeCached: Long = -1L
+
+        init {
+            try {
+                // Pre-cache the current file size.
+                synchronized(VeraCryptSession.locks[volId]) {
+                    fileSizeCached = VeraCryptEngine.getFileSizeNative(
+                        getFd(session.uri, "r"), "", 0, fatPath, volId
+                    )
+                }
+                if (fileSizeCached < 0) {
+                    fileSizeCached = 0L
+                }
+            } catch (e: Exception) {
+                handlerThread.quitSafely()
+                throw FileNotFoundException("VeraCrypt initialization failed: ${e.message}")
+            }
+        }
+
+        override fun onGetSize(): Long {
+            return fileSizeCached
+        }
+
+        override fun onRead(offset: Long, size: Int, data: ByteArray): Int {
+            val fd = getFd(session.uri, "r")
+            val chunk = synchronized(VeraCryptSession.locks[volId]) {
+                VeraCryptEngine.readFileChunkNative(
+                    fd, "", 0, fatPath, offset, size, volId
+                )
+            } ?: throw ErrnoException("onRead", OsConstants.EIO)
+
+            if (chunk.isEmpty()) return 0
+            val readSize = minOf(chunk.size, size)
+            System.arraycopy(chunk, 0, data, 0, readSize)
+            return readSize
+        }
+
+        override fun onWrite(offset: Long, size: Int, data: ByteArray): Int {
+            if (!isWrite) {
+                throw ErrnoException("onWrite", OsConstants.EBADF)
+            }
+
+            // Extract exactly the slice of bytes the system requested to write
+            val chunkData = if (data.size == size) data else data.copyOf(size)
+            val fd = getFd(session.uri, "rw")
+
+            val success = synchronized(VeraCryptSession.locks[volId]) {
+                VeraCryptEngine.writeFileChunkNative(
+                    fd, "", 0, fatPath, offset, chunkData, volId
+                )
+            }
+            if (!success) {
+                throw ErrnoException("onWrite failed", OsConstants.EIO)
+            }
+
+            // Dynamically scale cached size if the write expands the file
+            val endOffset = offset + size
+            if (endOffset > fileSizeCached) {
+                fileSizeCached = endOffset
+            }
+            hasChanges = true
+            return size
+        }
+
+        override fun onFsync() {
+            // Write operations commit to the virtual storage synchronously on each chunk,
+            // but we keep this stub compliant with the standard interface.
+        }
+
+        override fun onRelease() {
+            if (isWrite && hasChanges) {
+                // Notify the system that the containing directory changed
+                val parentPath = if (fatPath.contains("/")) fatPath.substringBeforeLast("/") else ""
+                context?.contentResolver?.notifyChange(
+                    DocumentsContract.buildChildDocumentsUri(
+                        "com.aeidolon.vaultexplorer.documents", "$volId:dir:$parentPath"
+                    ), null
+                )
+            }
+            handlerThread.quitSafely()
+        }
+    }
 
     private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
         val height = options.outHeight

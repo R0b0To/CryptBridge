@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../models/mounted_container.dart';
 import '../../services/cross_container_clipboard.dart';
-import '../../services/local_streaming_server.dart';
 import '../../services/vaultexplorer_api.dart';
 import '../../utils/format_utils.dart';
 import '../../utils/temp_file_utils.dart';
@@ -61,11 +60,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   int _freeSpace = 0;
 
   // ── Inline status (replaces SnackBars for operation feedback) ─────────────
-  // null = hidden. Set to a message to show; cleared after a short delay.
   String? _statusMessage;
   bool _statusIsError = false;
 
-  // ── Unified clipboard (singleton survives navigation) ─────────────────────
+  // ── Unified clipboard ─────────────────────────────────────────────────────
   CrossContainerClipboard get _clip => CrossContainerClipboard.instance;
 
   // ── Search state ──────────────────────────────────────────────────────────
@@ -75,10 +73,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   // ── Layout state ──────────────────────────────────────────────────────────
   BrowserLayoutMode _layoutMode = BrowserLayoutMode.list;
-
-  // ── Streaming server (gallery thumbnails) ─────────────────────────────────
-  LocalStreamingServer? _streamingServer;
-  int? _streamingServerPort;
 
   // ── Convenience getters ───────────────────────────────────────────────────
   bool get _atRoot => _pathStack.length == 1;
@@ -90,19 +84,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     super.initState();
     _freeSpace = widget.container.freeSpace;
     _loadDirectoryContents('');
-    _startStreamingServer();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    _streamingServer?.stop();
     super.dispose();
   }
 
   // ── Inline status ─────────────────────────────────────────────────────────
-  // Single point of truth for operation feedback. Replaces whatever was
-  // showing before — no stacking, no fighting with SnackBars.
 
   void _setStatus(String msg, {bool error = false, Duration? autoClear}) {
     if (!mounted) return;
@@ -122,21 +112,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   void _clearStatus() {
     if (mounted) setState(() => _statusMessage = null);
-  }
-
-  // ── Streaming server ──────────────────────────────────────────────────────
-
-  Future<void> _startStreamingServer() async {
-    try {
-      _streamingServer = LocalStreamingServer(widget.container);
-      final port = await _streamingServer!.start().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => throw Exception('Streaming server timed out'),
-      );
-      if (mounted) setState(() => _streamingServerPort = port);
-    } catch (e) {
-      debugPrint('FileBrowser: streaming server failed to start – $e');
-    }
   }
 
   // ── Directory loading ─────────────────────────────────────────────────────
@@ -211,6 +186,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     }
   }
 
+ // ── FileBrowserScreen Navigation Excerpt ───────────────────────────────────
+
   void _handleFileTap(String rawItem) {
     if (isSelectionMode) {
       toggleSelectItem(rawItem);
@@ -236,11 +213,70 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
             container: widget.container,
             mediaFiles: resolvedPaths,
             initialIndex: mediaEntries.indexOf(cleanName),
+            startingFolder: _currentDirPath, // <-- Passed starting folder
           ),
         ),
       );
     } else {
       _openFileWithApp(cleanName, fullPath);
+    }
+  }
+
+  Future<void> _startMediaViewerFromCurrentLocation() async {
+    final localMedia = _currentItems
+        .where((f) => !f.startsWith('[DIR]') && !f.startsWith('System:'))
+        .map((f) => f.split('|').first)
+        .where(_isSupportedMedia)
+        .toList();
+
+    if (localMedia.isNotEmpty) {
+      final resolvedPaths = localMedia
+          .map((f) => _currentDirPath.isEmpty ? f : '$_currentDirPath/$f')
+          .toList();
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MediaViewerScreen(
+            container: widget.container,
+            mediaFiles: resolvedPaths,
+            initialIndex: 0,
+            startingFolder: _currentDirPath, // <-- Passed starting folder
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    _setStatus('Scanning subfolders for media…', autoClear: const Duration(seconds: 15));
+
+    try {
+      final recursiveMedia = await _scanMediaRecursively(_currentDirPath);
+      if (!mounted) return;
+
+      if (recursiveMedia.isNotEmpty) {
+        _clearStatus();
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MediaViewerScreen(
+              container: widget.container,
+              mediaFiles: recursiveMedia,
+              initialIndex: 0,
+              startingFolder: _currentDirPath, // <-- Passed starting folder
+            ),
+          ),
+        );
+      } else {
+        _setStatus('No media files found in this folder or its subfolders', error: true);
+      }
+    } catch (e) {
+      _setStatus('Failed to scan subfolders: $e', error: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -262,9 +298,39 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     final ext = fileName.split('.').last.toLowerCase();
     return const {
       'jpg', 'jpeg', 'png', 'gif', 'webp',
-      'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv'
+      'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv',
+      'mp3', 'm4a', 'wav', 'flac', 'ogg', 'aac'
     }.contains(ext);
   }
+
+  Future<List<String>> _scanMediaRecursively(String dirPath) async {
+    final foundFiles = <String>[];
+    try {
+      final items = await vaultExplorerApi.listDirectory(widget.container, dirPath);
+      if (items != null) {
+        for (final item in items) {
+          if (item.startsWith('System:')) continue;
+          if (item.startsWith('[DIR] ')) {
+            final subDirName = item.replaceFirst('[DIR] ', '');
+            final subDirPath = dirPath.isEmpty ? subDirName : '$dirPath/$subDirName';
+            final nested = await _scanMediaRecursively(subDirPath);
+            foundFiles.addAll(nested);
+          } else {
+            final fileName = item.split('|').first;
+            if (_isSupportedMedia(fileName)) {
+              final fullPath = dirPath.isEmpty ? fileName : '$dirPath/$fileName';
+              foundFiles.add(fullPath);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error scanning subfolder for media: $e');
+    }
+    return foundFiles;
+  }
+
+
 
   Future<void> _openFileWithApp(String cleanName, String fullPath) async {
     try {
@@ -281,9 +347,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   // ── Clipboard init ────────────────────────────────────────────────────────
-  // Writes to the global singleton so the clipboard survives navigation to
-  // other containers. Size is stored per-file so the space pre-flight check
-  // doesn't need extra JNI calls for flat files.
 
   void _initClipboard({required bool cut}) {
     final sources = selectedItems.map((item) {
@@ -292,7 +355,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           isDir ? item.replaceFirst('[DIR] ', '') : item.split('|').first;
       final path =
           _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
-      // Embed byte size for flat files (from the listing "name|bytes" format).
       int? size;
       if (!isDir) {
         final parts = item.split('|');
@@ -311,8 +373,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   // ── Space pre-flight ──────────────────────────────────────────────────────
-  // Sums byte size of every file in the clipboard tree. For flat files the
-  // size is already stored. For directories we recurse the source container.
 
   Future<int> _measureTreeBytes(
       MountedContainer container, String path) async {
@@ -352,7 +412,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     final isCut = _clip.isCutOperation;
     final sameContainer = _clip.isFromContainer(widget.container);
 
-    // ── Filter obvious skips ──────────────────────────────────────────────
     final toProcess = <Map<String, dynamic>>[];
     int skipCount = 0;
     for (final item in items) {
@@ -377,7 +436,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     setState(() => _isLoading = true);
     _setStatus('Checking available space…', autoClear: const Duration(minutes: 5));
 
-    // ── Space pre-flight (skip for same-container move = free rename) ─────
     if (!(sameContainer && isCut)) {
       int requiredBytes = 0;
       for (final item in toProcess) {
@@ -386,7 +444,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       final spaceInfo = await vaultExplorerApi.getSpaceInfo(widget.container);
       final freeBytes =
           (spaceInfo != null && spaceInfo.length > 1) ? spaceInfo[1] : 0;
-      // 5 % safety margin for FAT metadata overhead.
       if (requiredBytes > (freeBytes * 0.95).floor()) {
         setState(() => _isLoading = false);
         _setStatus(
@@ -395,12 +452,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           error: true,
           autoClear: const Duration(seconds: 6),
         );
-        // Leave clipboard intact so the user can try elsewhere.
         return;
       }
     }
 
-    // ── Pre-fetch destination listing for conflict detection ───────────────
     final existingRaw = await vaultExplorerApi.listDirectory(
             widget.container, _currentDirPath) ??
         [];
@@ -460,7 +515,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                 await _deleteEntryRecursive(
                     widget.container, destPath, destIsDir);
               }
-              // copy path: FA_CREATE_ALWAYS in writeBackFile overwrites natively.
             case _ConflictResolution.keepBoth:
               final uniqueName = _makeUniqueName(fileName, existingNames);
               existingNames.add(uniqueName.toLowerCase());
@@ -502,7 +556,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       }
     } finally {
       if (diskFull) {
-        // Roll back everything written so far — children before parents.
         for (final path in createdDestPaths.reversed) {
           try {
             await _deleteEntryRecursive(widget.container, path, false);
@@ -630,7 +683,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   // ── Recursive delete ──────────────────────────────────────────────────────
-  // f_unlink only removes empty directories; we must empty them first.
 
   Future<bool> _deleteEntryRecursive(
       MountedContainer container, String path, bool isDir) async {
@@ -649,8 +701,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   // ── Same-container copy ───────────────────────────────────────────────────
-  // Children are snapshotted BEFORE the destination dir is created to prevent
-  // the new dest from appearing in the listing and looping forever.
 
   Future<bool> _copyEntryWithinContainer(
     String srcPath,
@@ -881,8 +931,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         if (isSelectionMode) {
           exitSelectionMode();
         } else if (_clip.hasItems && _clip.isFromContainer(widget.container)) {
-          // Cancel clipboard only if it was initiated here; cross-container
-          // clips should survive the back navigation.
           _clip.clear();
           setState(() {});
         } else if (_isSearchActive) {
@@ -907,7 +955,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
             
             const Divider(),
             Expanded(child: _buildBody(filteredDirs, filteredFiles)),
-            // ── Inline status bar ──────────────────────────────────────
             if (_statusMessage != null)
               _StatusBar(
                 message: _statusMessage!,
@@ -927,7 +974,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     final cs = Theme.of(context).colorScheme;
     final allSelectable = [...dirs, ...files];
 
-    // ── Selection mode ──────────────────────────────────────────────────
     if (isSelectionMode) {
       final single = selectedItems.length == 1;
       final singleFile = single && !selectedItems.first.startsWith('[DIR] ');
@@ -967,7 +1013,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       );
     }
 
-    // ── Clipboard mode ──────────────────────────────────────────────────
     if (_clip.hasItems) {
       final fromHere = _clip.isFromContainer(widget.container);
       return ClipboardAppBar(
@@ -982,7 +1027,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       );
     }
 
-    // ── Search mode ─────────────────────────────────────────────────────
     if (_isSearchActive) {
       return AppBar(
         backgroundColor: cs.surface,
@@ -1021,7 +1065,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       );
     }
 
-    // ── Normal app bar ──────────────────────────────────────────────────
     return AppBar(
       leading: IconButton(
         icon: const Icon(Icons.arrow_back),
@@ -1034,12 +1077,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         children: [
           Text(widget.container.displayName,
               style: const TextStyle(fontSize: 14)),
-          if (!_atRoot)
-            Text(
-              _currentDirPath,
-              style: TextStyle(fontSize: 10, color: cs.outline),
-              overflow: TextOverflow.ellipsis,
-            ),
         ],
       ),
       actions: [
@@ -1047,31 +1084,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           icon: const Icon(Icons.search),
           tooltip: 'Search in this folder',
           onPressed: () => setState(() => _isSearchActive = true),
-        ),
-        IconButton(
-          icon: Icon(
-            _layoutMode == BrowserLayoutMode.list
-                ? Icons.grid_view_rounded
-                : Icons.view_list_rounded,
-          ),
-          tooltip: _layoutMode == BrowserLayoutMode.list
-              ? 'Gallery view'
-              : 'List view',
-          onPressed: () => setState(() {
-            _layoutMode = _layoutMode == BrowserLayoutMode.list
-                ? BrowserLayoutMode.grid
-                : BrowserLayoutMode.list;
-          }),
-        ),
-        PopupMenuButton<SortBy>(
-          icon: const Icon(Icons.sort),
-          tooltip: 'Sort by',
-          onSelected: setSort,
-          itemBuilder: (_) => [
-            buildSortMenuItem(SortBy.name, 'Name'),
-            buildSortMenuItem(SortBy.size, 'Size'),
-            buildSortMenuItem(SortBy.extension, 'Type'),
-          ],
         ),
         PopupMenuButton<String>(
           icon: const Icon(Icons.add),
@@ -1137,6 +1149,93 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
             ),
           ],
         ),
+        // Consolidated Options Overflow Menu
+        PopupMenuButton<dynamic>(
+          icon: const Icon(Icons.more_vert),
+          tooltip: 'Folder options',
+          onSelected: (value) {
+            if (value is SortBy) {
+              setSort(value);
+            } else if (value is String) {
+              switch (value) {
+                case 'media_viewer':
+                  _startMediaViewerFromCurrentLocation();
+                  break;
+                case 'toggle_layout':
+                  setState(() {
+                    _layoutMode = _layoutMode == BrowserLayoutMode.list
+                        ? BrowserLayoutMode.grid
+                        : BrowserLayoutMode.list;
+                  });
+                  break;
+              }
+            }
+          },
+          itemBuilder: (ctx) {
+            final localCs = Theme.of(ctx).colorScheme;
+            
+            final hasLocalMedia = _currentItems
+                .where((f) => !f.startsWith('[DIR]') && !f.startsWith('System:'))
+                .map((f) => f.split('|').first)
+                .where(_isSupportedMedia)
+                .isNotEmpty;
+                
+            final hasSubfolders = _currentItems.any((f) => f.startsWith('[DIR] '));
+            final canPlay = hasLocalMedia || hasSubfolders;
+
+            return [
+              PopupMenuItem<dynamic>(
+                value: 'media_viewer',
+                enabled: canPlay,
+                child: Row(children: [
+                  Icon(
+                    Icons.play_circle_outline_rounded,
+                    color: canPlay ? localCs.primary : localCs.error,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Play Media Here',
+                    style: TextStyle(
+                      color: canPlay ? null : localCs.error,
+                    ),
+                  ),
+                ]),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem<dynamic>(
+                value: 'toggle_layout',
+                child: Row(children: [
+                  Icon(
+                    _layoutMode == BrowserLayoutMode.list
+                        ? Icons.grid_view_rounded
+                        : Icons.view_list_rounded,
+                    color: localCs.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_layoutMode == BrowserLayoutMode.list
+                      ? 'Switch to Gallery'
+                      : 'Switch to List'),
+                ]),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem<dynamic>(
+                enabled: false,
+                height: 28,
+                child: Text(
+                  'Sort By',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: localCs.outline,
+                  ),
+                ),
+              ),
+              buildSortMenuItem(SortBy.name, 'Name'),
+              buildSortMenuItem(SortBy.size, 'Size'),
+              buildSortMenuItem(SortBy.extension, 'Type'),
+            ];
+          },
+        ),
       ],
     );
   }
@@ -1155,12 +1254,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     }
     if (_layoutMode == BrowserLayoutMode.grid) {
       return FileGridView(
+        container: widget.container,
         dirs: dirs,
         files: files,
         isSelectionMode: isSelectionMode,
         selectedItems: selectedItems,
         currentDirPath: _currentDirPath,
-        streamingServerPort: _streamingServerPort,
         onDirTap: _handleDirTap,
         onFileTap: _handleFileTap,
         onItemLongPress: _handleItemLongPress,
@@ -1179,8 +1278,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 }
 
 // ── Inline status bar ─────────────────────────────────────────────────────────
-// Sits between the stats bar and the file list. Replaces itself in-place so
-// rapid operations never stack or fight with each other.
 
 class _StatusBar extends StatelessWidget {
   final String message;

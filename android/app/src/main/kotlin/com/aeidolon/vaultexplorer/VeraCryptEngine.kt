@@ -27,6 +27,9 @@ object VeraCryptEngine {
     external fun readFileChunkNative(fd: Int, password: String, pim: Int, targetFileName: String, offset: Long, length: Int, volId: Int): ByteArray?
 
     @JvmStatic
+    external fun writeFileChunkNative(fd: Int, password: String, pim: Int, targetFileName: String, offset: Long, data: ByteArray, volId: Int): Boolean
+
+    @JvmStatic
     external fun listDirectoryNative(fd: Int, password: String, pim: Int, dirPath: String, volId: Int): Array<String>?
 
     @JvmStatic
@@ -40,4 +43,6 @@ object VeraCryptEngine {
 
     @JvmStatic
     external fun createContainerNative(fd: Int, password: String, pim: Int, sizeBytes: Long, fileSystem: String): Boolean
+
+    
 }

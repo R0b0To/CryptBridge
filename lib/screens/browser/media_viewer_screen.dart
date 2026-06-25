@@ -1,22 +1,27 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import '../../models/mounted_container.dart';
 import '../../services/vaultexplorer_api.dart';
-import '../../services/local_streaming_server.dart';// ── Playback preferences (local to this session) ──────────────────────────
-  bool _autoPlay = true;
-  bool _autoAdvance = false;
+
+// ── Playback & Slideshow preferences (local to this session) ──────────────
+bool _autoPlay = true;
+bool _autoAdvance = false;
+
 class MediaViewerScreen extends StatefulWidget {
   final MountedContainer container;
   final List<String> mediaFiles;
   final int initialIndex;
+  final String? startingFolder;
 
   const MediaViewerScreen({
     Key? key,
     required this.container,
     required this.mediaFiles,
     required this.initialIndex,
+    this.startingFolder,
   }) : super(key: key);
 
   @override
@@ -40,25 +45,43 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   bool _isScanningSubfolders = false;
 
   ScrollPhysics _pagePhysics = const ClampingScrollPhysics();
+  Timer? _slideshowTimer;
 
-  LocalStreamingServer? _streamingServer;
-  int? _serverPort;
-  bool _serverReady = false;
-  String? _serverError;
+  // ── Prefetch Caching system ──────────────────────────────────────────────
+  final Map<String, Uint8List> _prefetchedImages = {};
+  final Set<String> _prefetchingActive = {};
 
-  
-
-  @override
+ @override
   void initState() {
     super.initState();
     _originalList = List.from(widget.mediaFiles);
     _currentPlaylist = List.from(widget.mediaFiles);
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
-    _startServer();
+    
+    // Auto-detect if we launched with a pre-scanned list containing subfolder items
+    final baseDir = _getBaseDir();
+    final hasSubfolderItems = widget.mediaFiles.any((file) {
+      final dir = file.contains('/') 
+          ? file.substring(0, file.lastIndexOf('/')) 
+          : '';
+      return dir != baseDir;
+    });
+
+    if (hasSubfolderItems) {
+      _selectedFolder = 'All';
+      _allFilesScanned = true;
+    }
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startSlideshowTimerIfNeeded();
+      _prefetchSurroundingItems();
+    });
   }
 
   String _getBaseDir() {
+    // Prioritize the explicitly passed starting directory
+    if (widget.startingFolder != null) return widget.startingFolder!;
     if (widget.mediaFiles.isEmpty) return '';
     final firstFile = widget.mediaFiles.first;
     if (!firstFile.contains('/')) return '';
@@ -67,8 +90,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
   bool _isSupportedMedia(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
-    return ['jpg', 'jpeg', 'png', 'gif', 'webp',
-            'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv'].contains(ext);
+    return [
+      'jpg', 'jpeg', 'png', 'gif', 'webp', // Images
+      'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv', // Videos
+      'mp3', 'm4a', 'wav', 'flac', 'ogg', 'aac' // Audio
+    ].contains(ext);
   }
 
   Future<void> _loadRecursiveMedia() async {
@@ -128,29 +154,106 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       if (_pageController.hasClients) {
         _pageController.jumpToPage(_currentIndex);
       }
+      _prefetchSurroundingItems();
     }
   }
 
-  Future<void> _startServer() async {
+  // ── Slideshow Logic for Static Images ─────────────────────────────────────
+  void _startSlideshowTimerIfNeeded() {
+    _cancelSlideshowTimer();
+    if (!_autoAdvance) return;
+    if (_currentPlaylist.isEmpty) return;
+
+    final currentFile = _currentPlaylist[_currentIndex];
+    final ext = currentFile.split('.').last.toLowerCase();
+    final isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext);
+
+    if (isImg) {
+      _slideshowTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) {
+          final next = _currentIndex + 1;
+          if (next < _currentPlaylist.length) {
+            _pageController.animateToPage(
+              next,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeInOut,
+            );
+          }
+        }
+      });
+    }
+  }
+
+  void _cancelSlideshowTimer() {
+    _slideshowTimer?.cancel();
+    _slideshowTimer = null;
+  }
+
+  void _toggleAutoAdvance(bool value) {
+    setState(() => _autoAdvance = value);
+    if (_autoAdvance) {
+      _startSlideshowTimerIfNeeded();
+    } else {
+      _cancelSlideshowTimer();
+    }
+  }
+
+  // ── Prefetch Core Logic ───────────────────────────────────────────────────
+  void _addToCache(String fileName, Uint8List bytes) {
+    if (_prefetchedImages.containsKey(fileName)) {
+      _prefetchedImages.remove(fileName); // Move to end
+    }
+    _prefetchedImages[fileName] = bytes;
+    if (_prefetchedImages.length > 5) {
+      _prefetchedImages.remove(_prefetchedImages.keys.first); // Evict oldest
+    }
+  }
+
+  void _prefetchSurroundingItems() {
+    if (_currentPlaylist.isEmpty) return;
+
+    final nextIndex = _currentIndex + 1;
+    final prevIndex = _currentIndex - 1;
+
+    if (nextIndex < _currentPlaylist.length) {
+      _prefetchFile(_currentPlaylist[nextIndex]);
+    }
+    if (prevIndex >= 0) {
+      _prefetchFile(_currentPlaylist[prevIndex]);
+    }
+  }
+
+  Future<void> _prefetchFile(String fileName) async {
+    if (_prefetchedImages.containsKey(fileName) || _prefetchingActive.contains(fileName)) {
+      return;
+    }
+
+    final ext = fileName.split('.').last.toLowerCase();
+    final isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext);
+    if (!isImg) return; // Images benefit most from chunk caching
+
+    _prefetchingActive.add(fileName);
     try {
-      _streamingServer = LocalStreamingServer(widget.container);
-      final port = await _streamingServer!.start().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => throw Exception('Streaming server timed out'),
-      );
-      if (mounted) setState(() { _serverPort = port; _serverReady = true; });
-    } catch (e) {
-      if (mounted) {
-        setState(() => _serverError =
-            'Could not start media server. Try reopening the file.');
+      final size = await vaultExplorerApi.getFileSize(widget.container, fileName);
+      if (size > 0) {
+        final data = await vaultExplorerApi.readFileChunk(widget.container, fileName, 0, size);
+        if (data != null && data.isNotEmpty && mounted) {
+          setState(() {
+            _addToCache(fileName, data);
+          });
+        }
       }
+    } catch (e) {
+      debugPrint('Failed to prefetch file $fileName: $e');
+    } finally {
+      _prefetchingActive.remove(fileName);
     }
   }
 
   @override
   void dispose() {
+    _cancelSlideshowTimer();
     _pageController.dispose();
-    _streamingServer?.stop();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
@@ -196,6 +299,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
         _applyFolderFiltering(_selectedFolder, currentFile);
         _isShuffled = false;
       }
+      _prefetchSurroundingItems();
     });
   }
 
@@ -265,6 +369,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
         setState(() {
           _currentPlaylist.removeAt(_currentIndex);
           _originalList.remove(currentFile);
+          _prefetchedImages.remove(currentFile);
           if (_currentPlaylist.isEmpty) {
             Navigator.pop(context);
             return;
@@ -275,6 +380,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
           if (_pageController.hasClients) {
             _pageController.jumpToPage(_currentIndex);
           }
+          _prefetchSurroundingItems();
         });
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('File deleted successfully')));
@@ -286,9 +392,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     }
   }
 
-  // ── Auto-advance ──────────────────────────────────────────────────────────
-  // Called by RealVideoPlayerWidget when the video reaches its end.
-  void _onVideoEnd() {
+  void _onMediaEnd() {
     if (!_autoAdvance) return;
     if (!mounted) return;
     final next = _currentIndex + 1;
@@ -304,32 +408,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_serverError != null) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.error_outline,
-                  color: Color(0xFFEF5350), size: 40),
-              const SizedBox(height: 16),
-              Text(_serverError!,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 20),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Go back',
-                    style: TextStyle(color: Color(0xFF4FC3F7))),
-              ),
-            ]),
-          ),
-        ),
-      );
-    }
-
-    if (!_serverReady || _currentPlaylist.isEmpty) {
+    if (_currentPlaylist.isEmpty) {
       return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(
@@ -343,6 +422,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
     final total = _currentPlaylist.length;
     final currentName = _currentPlaylist[_currentIndex];
+    final currentExt = currentName.split('.').last.toLowerCase();
+    final isCurrentAnImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(currentExt);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -352,20 +433,36 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
             controller: _pageController,
             physics: _pagePhysics,
             itemCount: total,
-            onPageChanged: (index) => setState(() => _currentIndex = index),
+            onPageChanged: (index) {
+              setState(() => _currentIndex = index);
+              _startSlideshowTimerIfNeeded();
+              _prefetchSurroundingItems();
+            },
             itemBuilder: (context, index) {
-              final streamUrl =
-                  'http://127.0.0.1:$_serverPort/media'
-                  '?file=${Uri.encodeQueryComponent(_currentPlaylist[index])}';
+              final volId = widget.container.volId;
+              final escapedPath = Uri.encodeComponent(_currentPlaylist[index]);
+              final contentUriString = 
+                  'content://com.aeidolon.vaultexplorer.documents/document/$volId%3Afile%3A$escapedPath';
+
+              final fileName = _currentPlaylist[index];
+              final prefetchedBytes = _prefetchedImages[fileName];
+
               return _MediaPage(
-                key: ValueKey(_currentPlaylist[index]),
-                fileName: _currentPlaylist[index],
-                streamUrl: streamUrl,
+                key: ValueKey(fileName),
+                container: widget.container,
+                fileName: fileName,
+                contentUriString: contentUriString,
                 showUI: _showUI,
                 onToggleUI: _setUIVisibility,
                 skipSeconds: _doubleTapSkipSeconds,
                 autoPlay: _autoPlay,
-                onVideoEnd: _onVideoEnd,
+                autoAdvance: _autoAdvance,
+                prefetchedBytes: prefetchedBytes,
+                onImageLoaded: (bytes) => _addToCache(fileName, bytes),
+                onAutoPlayChanged: (val) => setState(() => _autoPlay = val),
+                onAutoAdvanceChanged: _toggleAutoAdvance,
+                onSkipSecondsChanged: (val) => setState(() => _doubleTapSkipSeconds = val),
+                onMediaEnd: _onMediaEnd,
                 onZoomChanged: (allowSwipe) => setState(() {
                   _pagePhysics = allowSwipe
                       ? const ClampingScrollPhysics()
@@ -439,15 +536,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                         _filterByFolder('Current Folder Only');
                       case 'folder_all':
                         _filterByFolder('All');
-                      case 'toggle_autoplay':
-                        setState(() => _autoPlay = !_autoPlay);
-                      case 'toggle_autoadvance':
-                        setState(() => _autoAdvance = !_autoAdvance);
-                      default:
-                        if (value.startsWith('skip_')) {
-                          final seconds = int.parse(value.split('_')[1]);
-                          setState(() => _doubleTapSkipSeconds = seconds);
-                        }
+                      case 'toggle_slideshow_advance':
+                        _toggleAutoAdvance(!_autoAdvance);
                     }
                   },
                   itemBuilder: (context) => [
@@ -486,7 +576,6 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                       ]),
                     ),
                     const PopupMenuDivider(),
-                    // ── Folder filter ───────────────────────────────────
                     PopupMenuItem<String>(
                       enabled: false,
                       height: 28,
@@ -520,65 +609,32 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                         const Text('All (Incl. Subfolders)'),
                       ]),
                     ),
-                    const PopupMenuDivider(),
-                    // ── Playback ────────────────────────────────────────
-                    PopupMenuItem<String>(
-                      enabled: false,
-                      height: 28,
-                      child: Text('Playback',
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).disabledColor)),
-                    ),
-                    PopupMenuItem<String>(
-                      value: 'toggle_autoplay',
-                      child: Row(children: [
-                        Icon(
-                          _autoPlay
-                              ? Icons.play_circle_outline
-                              : Icons.play_circle_filled,
-                          color: _autoPlay
-                              ? const Color(0xFF4FC3F7)
-                              : Colors.grey,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(_autoPlay ? 'Auto-play: On' : 'Auto-play: Off'),
-                      ]),
-                    ),
-                    PopupMenuItem<String>(
-                      value: 'toggle_autoadvance',
-                      child: Row(children: [
-                        Icon(
-                          Icons.skip_next,
-                          color: _autoAdvance
-                              ? const Color(0xFF4FC3F7)
-                              : Colors.grey,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(_autoAdvance
-                            ? 'Auto-advance: On'
-                            : 'Auto-advance: Off'),
-                      ]),
-                    ),
-                    const PopupMenuDivider(),
-                    // ── Seek skip ───────────────────────────────────────
-                    PopupMenuItem<String>(
-                      enabled: false,
-                      height: 28,
-                      child: Text('Seek Skip',
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).disabledColor)),
-                    ),
-                    ...[5, 10, 15, 30].map((s) => PopupMenuItem<String>(
-                          value: 'skip_$s',
-                          child: Text(
-                              'Skip ${s}s${_doubleTapSkipSeconds == s ? ' ✓' : ''}'),
-                        )),
+                    if (isCurrentAnImage) ...[
+                      const PopupMenuDivider(),
+                      PopupMenuItem<String>(
+                        enabled: false,
+                        height: 28,
+                        child: Text('Slideshow',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).disabledColor)),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'toggle_slideshow_advance',
+                        child: Row(children: [
+                          Icon(
+                            Icons.skip_next,
+                            color: _autoAdvance
+                                ? const Color(0xFF4FC3F7)
+                                : Colors.grey,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(_autoAdvance ? 'Auto-advance: On' : 'Auto-advance: Off'),
+                        ]),
+                      ),
+                    ],
                   ],
                 ),
               ]),
@@ -590,28 +646,44 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   }
 }
 
-// ── _MediaPage — routes images vs videos ──────────────────────────────────────
+// ── _MediaPage — routes images vs videos/audios ──────────────────────────────
 
 class _MediaPage extends StatefulWidget {
+  final MountedContainer container;
   final String fileName;
-  final String streamUrl;
+  final String contentUriString;
   final bool showUI;
   final ValueChanged<bool> onToggleUI;
   final ValueChanged<bool> onZoomChanged;
+  
   final int skipSeconds;
   final bool autoPlay;
-  final VoidCallback onVideoEnd;
+  final bool autoAdvance;
+  final Uint8List? prefetchedBytes;
+  final ValueChanged<Uint8List> onImageLoaded;
+
+  final ValueChanged<bool> onAutoPlayChanged;
+  final ValueChanged<bool> onAutoAdvanceChanged;
+  final ValueChanged<int> onSkipSecondsChanged;
+  final VoidCallback onMediaEnd;
 
   const _MediaPage({
     Key? key,
+    required this.container,
     required this.fileName,
-    required this.streamUrl,
+    required this.contentUriString,
     required this.showUI,
     required this.onToggleUI,
     required this.onZoomChanged,
     required this.skipSeconds,
     required this.autoPlay,
-    required this.onVideoEnd,
+    required this.autoAdvance,
+    required this.prefetchedBytes,
+    required this.onImageLoaded,
+    required this.onAutoPlayChanged,
+    required this.onAutoAdvanceChanged,
+    required this.onSkipSecondsChanged,
+    required this.onMediaEnd,
   }) : super(key: key);
 
   @override
@@ -657,6 +729,7 @@ class _MediaPageState extends State<_MediaPage> {
   Widget build(BuildContext context) {
     final ext = widget.fileName.split('.').last.toLowerCase();
     final isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext);
+    final isAudio = ['mp3', 'm4a', 'wav', 'flac', 'ogg', 'aac'].contains(ext);
 
     return Container(
       color: Colors.black,
@@ -682,58 +755,244 @@ class _MediaPageState extends State<_MediaPage> {
                   if (newScale <= 1.01) widget.onZoomChanged(true);
                 },
                 child: Center(
-                  child: Image.network(
-                    widget.streamUrl,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const Center(
-                      child: Text('Failed to stream image.',
-                          style: TextStyle(color: Colors.red)),
-                    ),
+                  child: EncryptedImageWidget(
+                    container: widget.container,
+                    fileName: widget.fileName,
+                    prefetchedBytes: widget.prefetchedBytes,
+                    onImageLoaded: widget.onImageLoaded,
                   ),
                 ),
               ),
             )
-          : RealVideoPlayerWidget(
-              streamUrl: widget.streamUrl,
+          : MediaPlayerWidget(
+              fileName: widget.fileName,
+              contentUriString: widget.contentUriString,
               showUI: widget.showUI,
               onToggleUI: widget.onToggleUI,
               skipSeconds: widget.skipSeconds,
               autoPlay: widget.autoPlay,
-              onVideoEnd: widget.onVideoEnd,
+              autoAdvance: widget.autoAdvance,
+              isAudio: isAudio,
+              onAutoPlayChanged: widget.onAutoPlayChanged,
+              onAutoAdvanceChanged: widget.onAutoAdvanceChanged,
+              onSkipSecondsChanged: widget.onSkipSecondsChanged,
+              onMediaEnd: widget.onMediaEnd,
               onZoomChanged: widget.onZoomChanged,
             ),
     );
   }
 }
 
-// ── RealVideoPlayerWidget ─────────────────────────────────────────────────────
+// ── EncryptedImageWidget ──────────────────────────────────────────────────────
 
-class RealVideoPlayerWidget extends StatefulWidget {
-  final String streamUrl;
+class EncryptedImageWidget extends StatefulWidget {
+  final MountedContainer container;
+  final String fileName;
+  final Uint8List? prefetchedBytes;
+  final ValueChanged<Uint8List> onImageLoaded;
+
+  const EncryptedImageWidget({
+    Key? key,
+    required this.container,
+    required this.fileName,
+    this.prefetchedBytes,
+    required this.onImageLoaded,
+  }) : super(key: key);
+
+  @override
+  State<EncryptedImageWidget> createState() => _EncryptedImageWidgetState();
+}
+
+class _EncryptedImageWidgetState extends State<EncryptedImageWidget> {
+  Uint8List? _bytes;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.prefetchedBytes != null) {
+      _bytes = widget.prefetchedBytes;
+    } else {
+      _loadImage();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant EncryptedImageWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.prefetchedBytes != null && _bytes == null) {
+      setState(() => _bytes = widget.prefetchedBytes);
+    }
+  }
+
+  Future<void> _loadImage() async {
+    try {
+      final size = await vaultExplorerApi.getFileSize(widget.container, widget.fileName);
+      if (size <= 0) throw Exception('File is empty');
+      
+      final data = await vaultExplorerApi.readFileChunk(
+        widget.container,
+        widget.fileName,
+        0,
+        size,
+      );
+      if (data == null || data.isEmpty) throw Exception('No content bytes');
+      if (mounted) {
+        setState(() => _bytes = data);
+        widget.onImageLoaded(data); // Promote to screen prefetch cache
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Failed to load encrypted image: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+        ),
+      );
+    }
+    if (_bytes == null) {
+      return const Center(
+        child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4FC3F7))),
+      );
+    }
+    return Image.memory(
+      _bytes!,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) => const Center(
+        child: Text('Invalid image format.', style: TextStyle(color: Colors.red)),
+      ),
+    );
+  }
+}
+
+// ── Audio Visualizer Component ────────────────────────────────────────────────
+
+class _AudioVisualizer extends StatefulWidget {
+  final bool isPlaying;
+  const _AudioVisualizer({Key? key, required this.isPlaying}) : super(key: key);
+
+  @override
+  State<_AudioVisualizer> createState() => _AudioVisualizerState();
+}
+
+class _AudioVisualizerState extends State<_AudioVisualizer>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  final List<double> _heights = [0.2, 0.5, 0.8, 0.4, 0.9, 0.3, 0.7, 0.5, 0.2];
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    if (widget.isPlaying) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _AudioVisualizer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isPlaying && !_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    } else if (!widget.isPlaying && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 50,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(_heights.length, (index) {
+              double animValue = _controller.value;
+              double factor = (index % 3 == 0)
+                  ? (animValue * 0.8 + 0.2)
+                  : (index % 3 == 1)
+                      ? ((1.0 - animValue) * 0.7 + 0.3)
+                      : ((((animValue + 0.5) % 1.0)) * 0.6 + 0.4);
+
+              if (!widget.isPlaying) factor = 0.15; 
+
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: 5,
+                height: 40 * factor * _heights[index],
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4FC3F7),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── MediaPlayerWidget (Unified Video & Audio Player) ────────────────────────
+
+class MediaPlayerWidget extends StatefulWidget {
+  final String fileName;
+  final String contentUriString;
   final bool showUI;
   final ValueChanged<bool> onToggleUI;
   final int skipSeconds;
   final ValueChanged<bool> onZoomChanged;
   final bool autoPlay;
-  final VoidCallback onVideoEnd;
+  final bool autoAdvance;
+  final bool isAudio;
+  final ValueChanged<bool> onAutoPlayChanged;
+  final ValueChanged<bool> onAutoAdvanceChanged;
+  final ValueChanged<int> onSkipSecondsChanged;
+  final VoidCallback onMediaEnd;
 
-  const RealVideoPlayerWidget({
+  const MediaPlayerWidget({
     Key? key,
-    required this.streamUrl,
+    required this.fileName,
+    required this.contentUriString,
     required this.showUI,
     required this.onToggleUI,
     required this.skipSeconds,
     required this.onZoomChanged,
     required this.autoPlay,
-    required this.onVideoEnd,
+    required this.autoAdvance,
+    required this.isAudio,
+    required this.onAutoPlayChanged,
+    required this.onAutoAdvanceChanged,
+    required this.onSkipSecondsChanged,
+    required this.onMediaEnd,
   }) : super(key: key);
 
   @override
-  State<RealVideoPlayerWidget> createState() => _RealVideoPlayerWidgetState();
+  State<MediaPlayerWidget> createState() => _MediaPlayerWidgetState();
 }
 
-class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
+class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
   late VideoPlayerController _controller;
   bool _initialized = false;
   String? _playerError;
@@ -754,7 +1013,6 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
   bool _isLooping = false;
   double _playbackSpeed = 1.0;
 
-  // Track if we've already fired onVideoEnd for this play-through
   bool _endFired = false;
 
   final TransformationController _videoTransformationController =
@@ -769,12 +1027,7 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
   }
 
   Future<void> _initPlayer() async {
-    try {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.streamUrl));
-    } catch (e) {
-      _controller = VideoPlayerController.network(widget.streamUrl);
-    }
-
+    _controller = VideoPlayerController.contentUri(Uri.parse(widget.contentUriString));
     _controller.addListener(_onControllerUpdate);
 
     try {
@@ -787,7 +1040,6 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
         await _controller.setVolume(_isMuted ? 0.0 : 1.0);
         await _controller.setLooping(_isLooping);
         await _controller.setPlaybackSpeed(_playbackSpeed);
-        // Honour autoPlay preference.
         if (widget.autoPlay) {
           _controller.play();
           _startHideTimer();
@@ -795,7 +1047,7 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _playerError = 'Stream initialization failed: $e');
+        setState(() => _playerError = 'Media stream initialization failed: $e');
       }
     }
   }
@@ -804,7 +1056,7 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
     if (_controller.value.hasError) {
       if (mounted) {
         setState(() => _playerError =
-            _controller.value.errorDescription ?? 'ExoPlayer stream error.');
+            _controller.value.errorDescription ?? 'Native media player error.');
       }
       return;
     }
@@ -819,19 +1071,16 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
       });
     }
 
-    // Auto-advance: fire once when the video reaches the end (not looping).
     if (_initialized &&
         !_isLooping &&
         _duration > Duration.zero &&
         _position >= _duration &&
         !_endFired) {
       _endFired = true;
-      // Small delay so the final frame is visible briefly.
       Future.delayed(const Duration(milliseconds: 400), () {
-        widget.onVideoEnd();
+        widget.onMediaEnd();
       });
     }
-    // Reset the sentinel if the user seeks back.
     if (_position < _duration * 0.95) {
       _endFired = false;
     }
@@ -888,7 +1137,7 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
     setState(() {
       _isLooping = !_isLooping;
       _controller.setLooping(_isLooping);
-      if (_isLooping) _endFired = false; // don't auto-advance when looping
+      if (_isLooping) _endFired = false;
     });
   }
 
@@ -901,6 +1150,7 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
   }
 
   void _handleVideoDoubleTap() {
+    if (widget.isAudio) return; 
     final position = _videoDoubleTapDetails?.localPosition;
     setState(() {
       if (_videoScale == 1.0) {
@@ -959,6 +1209,52 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
     return '$minutes:$seconds';
   }
 
+  Widget _buildAudioCenterVisual() {
+    final fileTitle = widget.fileName.split('/').last;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 130,
+          height: 130,
+          decoration: BoxDecoration(
+            color: const Color(0xFF161B22),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: const Color(0xFF4FC3F7).withOpacity(0.25),
+              width: 2,
+            ),
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.music_note_rounded,
+              size: 56,
+              color: Color(0xFF4FC3F7),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32.0),
+          child: Text(
+            fileTitle,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(height: 24),
+        _AudioVisualizer(isPlaying: _controller.value.isPlaying),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_playerError != null) {
@@ -987,90 +1283,97 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
       );
     }
 
+    Widget corePlayerWidget = Center(
+      child: AspectRatio(
+        aspectRatio: widget.isAudio ? 0.8 : _controller.value.aspectRatio,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (widget.isAudio)
+              _buildAudioCenterVisual()
+            else
+              VideoPlayer(_controller),
+            Row(children: [
+              Expanded(
+                flex: 3,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    widget.onToggleUI(!widget.showUI);
+                    if (!widget.showUI) _startHideTimer();
+                  },
+                  onDoubleTap: () => _skip(backwards: true),
+                  onLongPressStart: _onSpeedHoldStart,
+                  onLongPressEnd: _onSpeedHoldEnd,
+                  child: Container(),
+                ),
+              ),
+              Expanded(
+                flex: 4,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    widget.onToggleUI(!widget.showUI);
+                    if (!widget.showUI) _startHideTimer();
+                  },
+                  onDoubleTapDown: (details) =>
+                      _videoDoubleTapDetails = details,
+                  onDoubleTap: _handleVideoDoubleTap,
+                  onLongPressStart: _onSpeedHoldStart,
+                  onLongPressEnd: _onSpeedHoldEnd,
+                  child: Container(),
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    widget.onToggleUI(!widget.showUI);
+                    if (!widget.showUI) _startHideTimer();
+                  },
+                  onDoubleTap: () => _skip(backwards: false),
+                  onLongPressStart: _onSpeedHoldStart,
+                  onLongPressEnd: _onSpeedHoldEnd,
+                  child: Container(),
+                ),
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
+
+    if (!widget.isAudio) {
+      corePlayerWidget = InteractiveViewer(
+        transformationController: _videoTransformationController,
+        maxScale: 6.0,
+        minScale: 1.0,
+        clipBehavior: Clip.none,
+        onInteractionUpdate: (details) {
+          final newScale =
+              _videoTransformationController.value.getMaxScaleOnAxis();
+          if (newScale != _videoScale) {
+            setState(() => _videoScale = newScale);
+            widget.onZoomChanged(newScale <= 1.01);
+          }
+        },
+        onInteractionEnd: (details) {
+          final newScale =
+              _videoTransformationController.value.getMaxScaleOnAxis();
+          if (newScale <= 1.01) widget.onZoomChanged(true);
+        },
+        child: corePlayerWidget,
+      );
+    }
+
     return ClipRect(
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          // ── Video canvas ──────────────────────────────────────────────
-          InteractiveViewer(
-            transformationController: _videoTransformationController,
-            maxScale: 6.0,
-            minScale: 1.0,
-            clipBehavior: Clip.none,
-            onInteractionUpdate: (details) {
-              final newScale =
-                  _videoTransformationController.value.getMaxScaleOnAxis();
-              if (newScale != _videoScale) {
-                setState(() => _videoScale = newScale);
-                widget.onZoomChanged(newScale <= 1.01);
-              }
-            },
-            onInteractionEnd: (details) {
-              final newScale =
-                  _videoTransformationController.value.getMaxScaleOnAxis();
-              if (newScale <= 1.01) widget.onZoomChanged(true);
-            },
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    VideoPlayer(_controller),
-                    Row(children: [
-                      Expanded(
-                        flex: 3,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: () {
-                            widget.onToggleUI(!widget.showUI);
-                            if (!widget.showUI) _startHideTimer();
-                          },
-                          onDoubleTap: () => _skip(backwards: true),
-                          onLongPressStart: _onSpeedHoldStart,
-                          onLongPressEnd: _onSpeedHoldEnd,
-                          child: Container(),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 4,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: () {
-                            widget.onToggleUI(!widget.showUI);
-                            if (!widget.showUI) _startHideTimer();
-                          },
-                          onDoubleTapDown: (details) =>
-                              _videoDoubleTapDetails = details,
-                          onDoubleTap: _handleVideoDoubleTap,
-                          onLongPressStart: _onSpeedHoldStart,
-                          onLongPressEnd: _onSpeedHoldEnd,
-                          child: Container(),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 3,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: () {
-                            widget.onToggleUI(!widget.showUI);
-                            if (!widget.showUI) _startHideTimer();
-                          },
-                          onDoubleTap: () => _skip(backwards: false),
-                          onLongPressStart: _onSpeedHoldStart,
-                          onLongPressEnd: _onSpeedHoldEnd,
-                          child: Container(),
-                        ),
-                      ),
-                    ]),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          corePlayerWidget,
 
-          // ── Skip indicators ───────────────────────────────────────────
           if (_showLeftIndicator)
             Positioned(
               left: 45,
@@ -1119,7 +1422,6 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
               ),
             ),
 
-          // ── 2× speed indicator ────────────────────────────────────────
           if (_isSpeedHeld)
             Positioned(
               top: 20,
@@ -1149,169 +1451,8 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
               ),
             ),
 
-          // ── Bottom controls ───────────────────────────────────────────
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-            left: 0,
-            right: 0,
-            bottom: widget.showUI ? 0 : -140,
-            child: Container(
-              padding: EdgeInsets.only(
-                top: 12,
-                bottom: MediaQuery.of(context).padding.bottom + 12,
-                left: 16,
-                right: 16,
-              ),
-              color: Colors.black.withOpacity(0.65),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Seek bar
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: const Color(0xFF4FC3F7),
-                      inactiveTrackColor: const Color(0xFF2A3040),
-                      thumbColor: const Color(0xFF4FC3F7),
-                      trackHeight: 4,
-                      thumbShape:
-                          const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape:
-                          const RoundSliderOverlayShape(overlayRadius: 14),
-                      trackShape: const RectangularSliderTrackShape(),
-                    ),
-                    child: Slider(
-                      value: _sliderValue.clamp(0.0, 1.0),
-                      onChanged: (value) {
-                        _showControlsAndResetTimer();
-                        setState(() {
-                          _isDragging = true;
-                          _sliderValue = value;
-                        });
-                        final now = DateTime.now();
-                        if (now
-                                .difference(_lastSeekTime)
-                                .inMilliseconds >
-                            100) {
-                          _lastSeekTime = now;
-                          final targetMs =
-                              (value * _duration.inMilliseconds).toInt();
-                          _controller
-                              .seekTo(Duration(milliseconds: targetMs));
-                        }
-                      },
-                      onChangeEnd: (value) {
-                        final targetMs =
-                            (value * _duration.inMilliseconds).toInt();
-                        _controller
-                            .seekTo(Duration(milliseconds: targetMs))
-                            .then((_) {
-                          setState(() => _isDragging = false);
-                          _startHideTimer();
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  // Timestamps
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(_formatDuration(_position),
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 11)),
-                      Text(_formatDuration(_duration),
-                          style: const TextStyle(
-                              color: Color(0xFF7A8899), fontSize: 11)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Options row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: Icon(
-                          _isMuted ? Icons.volume_off : Icons.volume_up,
-                          color:
-                              _isMuted ? Colors.redAccent : Colors.white,
-                          size: 20,
-                        ),
-                        onPressed: _toggleMute,
-                      ),
-                      const SizedBox(width: 24),
-                      IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: Icon(
-                          Icons.loop,
-                          color: _isLooping
-                              ? const Color(0xFF4FC3F7)
-                              : Colors.white,
-                          size: 20,
-                        ),
-                        onPressed: _toggleLoop,
-                      ),
-                      const SizedBox(width: 24),
-                      // Auto-advance indicator
-                      if (_autoAdvance) ...[
-                        Icon(Icons.skip_next,
-                            color: const Color(0xFF4FC3F7), size: 18),
-                        const SizedBox(width: 24),
-                      ],
-                      // Speed selector
-                      Theme(
-                        data: Theme.of(context)
-                            .copyWith(cardColor: Colors.grey[900]),
-                        child: PopupMenuButton<double>(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          initialValue: _playbackSpeed,
-                          onSelected: _setPlaybackSpeed,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.white24),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '${_playbackSpeed}x',
-                              style: const TextStyle(
-                                  color: Color(0xFF4FC3F7),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          itemBuilder: (context) => [0.5, 1.0, 1.25, 1.5, 2.0]
-                              .map((speed) => PopupMenuItem<double>(
-                                    value: speed,
-                                    height: 36,
-                                    child: Text(
-                                      '${speed}x',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight:
-                                              _playbackSpeed == speed
-                                                  ? FontWeight.bold
-                                                  : FontWeight.normal),
-                                    ),
-                                  ))
-                              .toList(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+          bottomControls(context),
 
-          // ── Centre play/pause ─────────────────────────────────────────
           if (widget.showUI)
             Center(
               child: GestureDetector(
@@ -1338,6 +1479,248 @@ class _RealVideoPlayerWidgetState extends State<RealVideoPlayerWidget> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget bottomControls(BuildContext context) {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      left: 0,
+      right: 0,
+      bottom: widget.showUI ? 0 : -140,
+      child: Container(
+        padding: EdgeInsets.only(
+          top: 12,
+          bottom: MediaQuery.of(context).padding.bottom + 12,
+          left: 16,
+          right: 16,
+        ),
+        color: Colors.black.withOpacity(0.65),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: const Color(0xFF4FC3F7),
+                inactiveTrackColor: const Color(0xFF2A3040),
+                thumbColor: const Color(0xFF4FC3F7),
+                trackHeight: 4,
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape:
+                    const RoundSliderOverlayShape(overlayRadius: 14),
+                trackShape: const RectangularSliderTrackShape(),
+              ),
+              child: Slider(
+                value: _sliderValue.clamp(0.0, 1.0),
+                onChanged: (value) {
+                  _showControlsAndResetTimer();
+                  setState(() {
+                    _isDragging = true;
+                    _sliderValue = value;
+                  });
+                  final now = DateTime.now();
+                  if (now.difference(_lastSeekTime).inMilliseconds > 100) {
+                    _lastSeekTime = now;
+                    final targetMs =
+                        (value * _duration.inMilliseconds).toInt();
+                    _controller.seekTo(Duration(milliseconds: targetMs));
+                  }
+                },
+                onChangeEnd: (value) {
+                  final targetMs =
+                      (value * _duration.inMilliseconds).toInt();
+                  _controller
+                      .seekTo(Duration(milliseconds: targetMs))
+                      .then((_) {
+                    setState(() => _isDragging = false);
+                    _startHideTimer();
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(_formatDuration(_position),
+                    style: const TextStyle(color: Colors.white, fontSize: 11)),
+                Text(_formatDuration(_duration),
+                    style: const TextStyle(
+                        color: Color(0xFF7A8899), fontSize: 11)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(
+                    _isMuted ? Icons.volume_off : Icons.volume_up,
+                    color: _isMuted ? Colors.redAccent : Colors.white,
+                    size: 20,
+                  ),
+                  onPressed: _toggleMute,
+                ),
+                const SizedBox(width: 24),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(
+                    Icons.loop,
+                    color: _isLooping ? const Color(0xFF4FC3F7) : Colors.white,
+                    size: 20,
+                  ),
+                  onPressed: _toggleLoop,
+                ),
+                const SizedBox(width: 24),
+                if (widget.autoAdvance) ...[
+                  const Icon(Icons.skip_next,
+                      color: Color(0xFF4FC3F7), size: 18),
+                  const SizedBox(width: 24),
+                ],
+                Theme(
+                  data: Theme.of(context).copyWith(cardColor: Colors.grey[900]),
+                  child: PopupMenuButton<double>(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    initialValue: _playbackSpeed,
+                    onSelected: _setPlaybackSpeed,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white24),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${_playbackSpeed}x',
+                        style: const TextStyle(
+                            color: Color(0xFF4FC3F7),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    itemBuilder: (context) => [0.5, 1.0, 1.25, 1.5, 2.0]
+                        .map((speed) => PopupMenuItem<double>(
+                              value: speed,
+                              height: 36,
+                              child: Text(
+                                '${speed}x',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: _playbackSpeed == speed
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(width: 24),
+                Theme(
+                  data: Theme.of(context).copyWith(cardColor: Colors.grey[900]),
+                  child: PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    icon: const Icon(
+                      Icons.settings_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    tooltip: 'Playback Settings',
+                    onSelected: (value) {
+                      _showControlsAndResetTimer();
+                      if (value == 'toggle_autoplay') {
+                        widget.onAutoPlayChanged(!widget.autoPlay);
+                      } else if (value == 'toggle_autoadvance') {
+                        widget.onAutoAdvanceChanged(!widget.autoAdvance);
+                      } else if (value.startsWith('skip_')) {
+                        final seconds = int.parse(value.split('_')[1]);
+                        widget.onSkipSecondsChanged(seconds);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem<String>(
+                        enabled: false,
+                        height: 28,
+                        child: Text(
+                          'Playback Behavior',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey),
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'toggle_autoplay',
+                        child: Row(children: [
+                          Icon(
+                            widget.autoPlay
+                                ? Icons.play_circle_filled
+                                : Icons.play_circle_outline,
+                            color: widget.autoPlay
+                                ? const Color(0xFF4FC3F7)
+                                : Colors.grey,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(widget.autoPlay ? 'Auto-play: On' : 'Auto-play: Off'),
+                        ]),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'toggle_autoadvance',
+                        child: Row(children: [
+                          Icon(
+                            Icons.skip_next,
+                            color: widget.autoAdvance
+                                ? const Color(0xFF4FC3F7)
+                                : Colors.grey,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(widget.autoAdvance
+                              ? 'Auto-advance: On'
+                              : 'Auto-advance: Off'),
+                        ]),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem<String>(
+                        enabled: false,
+                        height: 28,
+                        child: Text(
+                          'Double-Tap Seek',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey),
+                        ),
+                      ),
+                      ...[5, 10, 15, 30].map((s) => PopupMenuItem<String>(
+                            value: 'skip_$s',
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('${s} seconds'),
+                                if (widget.skipSeconds == s)
+                                  const Icon(Icons.check,
+                                      color: Color(0xFF4FC3F7), size: 16),
+                              ],
+                            ),
+                          )),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

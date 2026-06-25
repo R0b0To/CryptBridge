@@ -1,15 +1,17 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:get_thumbnail_video/index.dart';
-import 'package:get_thumbnail_video/video_thumbnail.dart';
+import '../../../models/mounted_container.dart';
+import '../../../services/vaultexplorer_api.dart';
 import '../../../utils/file_type_utils.dart';
 import '../../../utils/format_utils.dart';
 
 /// A 3-column gallery grid for the file browser.
 ///
-/// Image and video files render as live thumbnails streamed from [streamingServerPort].
-/// Directories and other files render their colour-coded type icons.
+/// Image and video files render as live thumbnails loaded natively from memory 
+/// and content providers without relying on a local HTTP port.
 class FileGridView extends StatelessWidget {
+  final MountedContainer container;
   final List<String> dirs;
   final List<String> files;
   final bool isSelectionMode;
@@ -18,9 +20,6 @@ class FileGridView extends StatelessWidget {
   /// FAT path of the current directory (empty string at root).
   final String currentDirPath;
 
-  /// Port of the local streaming server; thumbnails are disabled when null.
-  final int? streamingServerPort;
-
   final ValueChanged<String> onDirTap;
   final ValueChanged<String> onFileTap;
   final ValueChanged<String> onItemLongPress;
@@ -28,12 +27,12 @@ class FileGridView extends StatelessWidget {
 
   const FileGridView({
     super.key,
+    required this.container,
     required this.dirs,
     required this.files,
     required this.isSelectionMode,
     required this.selectedItems,
     required this.currentDirPath,
-    this.streamingServerPort,
     required this.onDirTap,
     required this.onFileTap,
     required this.onItemLongPress,
@@ -105,20 +104,19 @@ class FileGridView extends StatelessWidget {
 
     final isImg = _isImage(cleanName);
     final isVid = _isVideo(cleanName);
-    final canThumb = (isImg || isVid) && streamingServerPort != null;
-
-    final thumbUrl = canThumb
-        ? 'http://127.0.0.1:$streamingServerPort/media'
-            '?file=${Uri.encodeQueryComponent(fullPath)}'
-        : null;
 
     Widget previewWidget;
-    if (thumbUrl != null) {
-      if (isImg) {
-        previewWidget = _NetworkThumb(url: thumbUrl);
-      } else {
-        previewWidget = _VideoNetworkThumb(url: thumbUrl);
-      }
+    if (isImg) {
+      previewWidget = _EncryptedImageGridThumb(
+        container: container,
+        filePath: fullPath,
+      );
+    } else if (isVid) {
+      // Replaced contentUrl construction with direct parameter passing:
+      previewWidget = _VideoNetworkThumb(
+        container: container,
+        filePath: fullPath,
+      );
     } else {
       previewWidget = Center(
         child: Icon(
@@ -272,55 +270,25 @@ class _CheckBadge extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Network thumbnail with progressive loading
+// Encrypted JNI Image Thumbnail Loader with downscaling (Prevents OOM)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _NetworkThumb extends StatelessWidget {
-  final String url;
-  const _NetworkThumb({required this.url});
+class _EncryptedImageGridThumb extends StatefulWidget {
+  final MountedContainer container;
+  final String filePath;
+
+  const _EncryptedImageGridThumb({
+    required this.container,
+    required this.filePath,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      cacheHeight: 240,
-      loadingBuilder: (_, child, progress) {
-        if (progress == null) return child;
-        return Container(
-          color: cs.surfaceContainerHighest,
-          child: Center(
-            child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.5,
-                color: cs.primary.withOpacity(0.6),
-              ),
-            ),
-          ),
-        );
-      },
-      errorBuilder: (_, __, ___) => Container(
-        color: cs.surfaceContainerHighest,
-        child: Icon(Icons.broken_image_outlined, size: 28, color: cs.outline),
-      ),
-    );
-  }
+  State<_EncryptedImageGridThumb> createState() => _EncryptedImageGridThumbState();
 }
 
-class _VideoNetworkThumb extends StatefulWidget {
-  final String url;
-  const _VideoNetworkThumb({required this.url});
-
-  @override
-  State<_VideoNetworkThumb> createState() => _VideoNetworkThumbState();
-}
-
-class _VideoNetworkThumbState extends State<_VideoNetworkThumb> {
-  // Static cache so thumbnail memory persists when scrolling away and back
-  static final Map<String, Uint8List> _thumbCache = {};
+class _EncryptedImageGridThumbState extends State<_EncryptedImageGridThumb> {
+  // Static memory cache so thumbnail allocations persist while scrolling
+  static final Map<String, Uint8List> _imageThumbCache = {};
 
   Uint8List? _bytes;
   bool _isLoading = true;
@@ -329,22 +297,23 @@ class _VideoNetworkThumbState extends State<_VideoNetworkThumb> {
   @override
   void initState() {
     super.initState();
-    _fetchVideoFrame();
+    _loadImage();
   }
 
   @override
-  void didUpdateWidget(_VideoNetworkThumb oldWidget) {
+  void didUpdateWidget(_EncryptedImageGridThumb oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url) {
-      _fetchVideoFrame();
+    if (oldWidget.filePath != widget.filePath) {
+      _loadImage();
     }
   }
 
-  Future<void> _fetchVideoFrame() async {
-    if (_thumbCache.containsKey(widget.url)) {
+  Future<void> _loadImage() async {
+    final cacheKey = '${widget.container.volId}:${widget.filePath}';
+    if (_imageThumbCache.containsKey(cacheKey)) {
       if (mounted) {
         setState(() {
-          _bytes = _thumbCache[widget.url];
+          _bytes = _imageThumbCache[cacheKey];
           _isLoading = false;
         });
       }
@@ -359,17 +328,19 @@ class _VideoNetworkThumbState extends State<_VideoNetworkThumb> {
     }
 
     try {
-      // In version 0.7.2, thumbnailData returns a non-nullable Future<Uint8List>.
-      // Any internal error or failure to decode the frame throws an exception 
-      // which is caught by the try-catch block.
-      final data = await VideoThumbnail.thumbnailData(
-        video: widget.url,
-        imageFormat: ImageFormat.WEBP,
-        maxHeight: 180, // Bound size to lower memory footprint
-        quality: 60,
+      final size = await vaultExplorerApi.getFileSize(widget.container, widget.filePath);
+      if (size <= 0) throw Exception('File is empty');
+
+      final data = await vaultExplorerApi.readFileChunk(
+        widget.container,
+        widget.filePath,
+        0,
+        size,
       );
 
-      _thumbCache[widget.url] = data;
+      if (data == null || data.isEmpty) throw Exception('No content bytes read');
+
+      _imageThumbCache[cacheKey] = data;
       if (mounted) {
         setState(() {
           _bytes = data;
@@ -377,7 +348,129 @@ class _VideoNetworkThumbState extends State<_VideoNetworkThumb> {
         });
       }
     } catch (e) {
-      debugPrint('Video thumbnail generation error: $e');
+      debugPrint('Failed loading image thumbnail: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    if (_isLoading) {
+      return Container(
+        color: cs.surfaceContainerHighest,
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: cs.primary.withOpacity(0.6),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_hasError || _bytes == null) {
+      return Container(
+        color: cs.surfaceContainerHighest,
+        child: Center(
+          child: Icon(Icons.broken_image_outlined, size: 28, color: cs.outline),
+        ),
+      );
+    }
+
+    return Image.memory(
+      _bytes!,
+      fit: BoxFit.cover,
+      // Downscale decoded image structure in GPU memory to prevent memory overhead
+      cacheHeight: 180, 
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Content URI Video Thumbnail Generation (Zero-Server)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _VideoNetworkThumb extends StatefulWidget {
+  final MountedContainer container;
+  final String filePath;
+
+  const _VideoNetworkThumb({
+    required this.container,
+    required this.filePath,
+  });
+
+  @override
+  State<_VideoNetworkThumb> createState() => _VideoNetworkThumbState();
+}
+
+class _VideoNetworkThumbState extends State<_VideoNetworkThumb> {
+  // Static memory cache so standard thumbnails persist during scroll recycle actions
+  static final Map<String, Uint8List> _videoThumbCache = {};
+
+  Uint8List? _bytes;
+  bool _isLoading = true;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchVideoFrame();
+  }
+
+  @override
+  void didUpdateWidget(_VideoNetworkThumb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.filePath != widget.filePath) {
+      _fetchVideoFrame();
+    }
+  }
+
+  Future<void> _fetchVideoFrame() async {
+    final cacheKey = '${widget.container.volId}:${widget.filePath}';
+    if (_videoThumbCache.containsKey(cacheKey)) {
+      if (mounted) {
+        setState(() {
+          _bytes = _videoThumbCache[cacheKey];
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _hasError = false;
+      });
+    }
+
+    try {
+      final data = await vaultExplorerApi.getVideoThumbnail(
+        widget.container,
+        widget.filePath,
+      );
+
+      if (data == null || data.isEmpty) throw Exception('No frame bytes received');
+
+      _videoThumbCache[cacheKey] = data;
+      if (mounted) {
+        setState(() {
+          _bytes = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Native Video thumbnail generation error: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -422,15 +515,19 @@ class _VideoNetworkThumbState extends State<_VideoNetworkThumb> {
         Image.memory(
           _bytes!,
           fit: BoxFit.cover,
+          cacheHeight: 180, // Memory footprint optimization
         ),
-        // Overlay a semi-transparent play icon to indicate a video file
         Container(
-          color: Colors.black.withOpacity(0.15),
-          child: const Center(
-            child: Icon(
-              Icons.play_circle_filled,
-              size: 28,
-              color: Colors.white70,
+          color: Colors.black.withOpacity(0.12),
+          child: const Align(
+            alignment: Alignment.bottomRight,
+            child: Padding(
+              padding: EdgeInsets.all(6.0),
+              child: Icon(
+                Icons.play_circle_outline,
+                size: 16,
+                color: Colors.white70,
+              ),
             ),
           ),
         ),

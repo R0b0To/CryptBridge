@@ -139,7 +139,6 @@ class AppSettings {
   // Default for new containers — individual containers can override.
   bool defaultDocumentProvider;
   bool videoAutoPlay;
-  bool useRootMount;
 
   AppSettings({
     this.useMasterPassword = false,
@@ -147,7 +146,6 @@ class AppSettings {
     this.masterPasswordHash,
     this.defaultDocumentProvider = false,
     this.videoAutoPlay = true,
-    this.useRootMount = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -156,7 +154,6 @@ class AppSettings {
         'masterPasswordHash': masterPasswordHash,
         'defaultDocumentProvider': defaultDocumentProvider,
         'videoAutoPlay': videoAutoPlay,
-        'useRootMount': useRootMount,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
@@ -170,7 +167,6 @@ class AppSettings {
             j['defaultDocumentProvider'] as bool? ??
             (j['mountAsDocumentProvider'] as bool? ?? false),
         videoAutoPlay: j['videoAutoPlay'] as bool? ?? true,
-        useRootMount: j['useRootMount'] as bool? ?? false,
       );
 
   /// Hashes [plaintext] with the same algorithm used at setup time.

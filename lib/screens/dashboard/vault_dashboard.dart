@@ -39,7 +39,6 @@ class _VaultDashboardState extends State<VaultDashboard>
     _loadSaved();
     _loadConfigs();
     _loadAppSettings();
-    _checkRoot();
   }
 
   @override
@@ -73,12 +72,6 @@ class _VaultDashboardState extends State<VaultDashboard>
     if (mounted) setState(() => _appSettings = s);
   }
 
-  Future<void> _checkRoot() async {
-    try {
-      final ok = await vaultExplorerApi.checkRootAvailable();
-      if (mounted) setState(() => _rootAvailable = ok);
-    } catch (_) {}
-  }
 
   // ── Auto-close ──────────────────────────────────────────────────────────
 
@@ -150,7 +143,6 @@ class _VaultDashboardState extends State<VaultDashboard>
 
     final cfg = uri != null ? _configs[uri] : null;
     final docProvider = cfg?.documentProvider ?? _appSettings.defaultDocumentProvider;
-    final useRoot = _appSettings.useRootMount && _rootAvailable;
 
     try {
       await showModalBottomSheet(
@@ -163,7 +155,6 @@ class _VaultDashboardState extends State<VaultDashboard>
           initialName: name,
           prefillPassword: rememberedPassword,
           documentProvider: docProvider,
-          useRoot: useRoot,
         ),
       );
       _loadSaved();
@@ -257,21 +248,6 @@ class _VaultDashboardState extends State<VaultDashboard>
           Icon(Icons.lock_outline, size: 16, color: cs.primary),
           const SizedBox(width: 8),
           const Text('vaultexplorer'),
-          if (_appSettings.useRootMount && _rootAvailable) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: cs.primaryContainer,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.shield_outlined, size: 10, color: cs.primary),
-                const SizedBox(width: 3),
-                Text('root', style: TextStyle(fontSize: 9, color: cs.primary, fontWeight: FontWeight.w700)),
-              ]),
-            ),
-          ],
         ]),
         actions: [
           IconButton(

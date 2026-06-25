@@ -11,7 +11,6 @@ class UnlockSheet extends StatefulWidget {
   final String? initialName;
   final String? prefillPassword;
   final bool documentProvider;
-  final bool useRoot;
 
   const UnlockSheet({
     Key? key,
@@ -20,7 +19,6 @@ class UnlockSheet extends StatefulWidget {
     this.initialName,
     this.prefillPassword,
     this.documentProvider = false,
-    this.useRoot = false,
   }) : super(key: key);
 
   @override
@@ -90,7 +88,6 @@ class _UnlockSheetState extends State<UnlockSheet> {
         pim,
         displayName: name,
         documentProvider: widget.documentProvider,
-        useRoot: widget.useRoot,
       );
 
       if (result != null) {
@@ -125,9 +122,7 @@ class _UnlockSheetState extends State<UnlockSheet> {
         HapticFeedback.lightImpact();
         if (mounted) Navigator.pop(context);
       } else {
-        setState(() => _error = widget.useRoot
-            ? 'Root mount failed — check password and root access'
-            : 'Incorrect password or invalid container');
+        setState(() => _error ='Incorrect password or invalid container');
       }
     } on PlatformException catch (e) {
       setState(() => _error = e.message ?? 'Unknown error');
@@ -168,21 +163,6 @@ class _UnlockSheetState extends State<UnlockSheet> {
                   widget.initialUri != null ? 'Unlock Container' : 'Mount Container',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 17),
                 ),
-                if (widget.useRoot) ...[
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: cs.primaryContainer,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.shield_outlined, size: 12, color: cs.primary),
-                      const SizedBox(width: 4),
-                      Text('Root', style: TextStyle(fontSize: 11, color: cs.primary, fontWeight: FontWeight.w600)),
-                    ]),
-                  ),
-                ],
               ]),
               const SizedBox(height: 12),
 

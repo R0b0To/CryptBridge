@@ -934,3 +934,41 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createContainerNative(
 
     return success ? JNI_TRUE : JNI_FALSE;
 }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_writeFileChunkNative(
+        JNIEnv* env, jobject,
+        jint fd, jstring password, jint pim,
+        jstring targetFileName, jlong offset, jbyteArray data, jint volId) {
+
+    const char* nativePass = env->GetStringUTFChars(password, nullptr);
+    const char* targetName = env->GetStringUTFChars(targetFileName, nullptr);
+
+    jsize len = env->GetArrayLength(data);
+    jbyte* body = env->GetByteArrayElements(data, nullptr);
+
+    bool success = false;
+    if (prepareSession(fd, nativePass, pim, volId, false)) {
+        if (ensureMounted(volId)) {
+            FIL f;
+            std::string fatPath = std::string(drivePaths[volId]) + "/" + targetName;
+            
+            // FA_WRITE | FA_OPEN_ALWAYS allows writing to any offset, creating the file if missing
+            if (f_open(&f, fatPath.c_str(), FA_WRITE | FA_OPEN_ALWAYS) == FR_OK) {
+                if (f_lseek(&f, static_cast<FSIZE_t>(offset)) == FR_OK) {
+                    UINT bw = 0;
+                    if (f_write(&f, body, static_cast<UINT>(len), &bw) == FR_OK && bw == static_cast<UINT>(len)) {
+                        success = true;
+                    }
+                }
+                f_close(&f);
+            }
+        }
+    }
+
+    env->ReleaseByteArrayElements(data, body, JNI_ABORT);
+    env->ReleaseStringUTFChars(password, nativePass);
+    env->ReleaseStringUTFChars(targetFileName, targetName);
+    close(fd);
+    return success ? JNI_TRUE : JNI_FALSE;
+}

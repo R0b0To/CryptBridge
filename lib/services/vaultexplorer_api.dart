@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/mounted_container.dart';
@@ -7,11 +8,6 @@ class VaultExplorerApi {
   const VaultExplorerApi();
 
   static const _channel = MethodChannel('com.aeidolon.vaultexplorer/engine');
-
-  Future<bool> checkRootAvailable() async {
-    final result = await _channel.invokeMethod<bool>('checkRootAvailable');
-    return result ?? false;
-  }
 
   Future<bool> createContainer({
     required String displayName,
@@ -42,10 +38,8 @@ class VaultExplorerApi {
     int pim, {
     String? displayName,
     bool documentProvider = false,
-    bool useRoot = false,
   }) async {
-    final method = useRoot ? 'mountRootContainer' : 'unlockContainer';
-    final raw = await _channel.invokeMethod<Map<Object?, Object?>>(method, {
+    final raw = await _channel.invokeMethod<Map<Object?, Object?>>('unlockContainer', {
       'filePath': filePath,
       'password': password,
       'pim': pim,
@@ -202,6 +196,21 @@ class VaultExplorerApi {
       'targetPath': targetPath,
     });
     return result ?? 0;
+  }
+
+  /// Extracts multiple video frames from memory over JNI and returns them
+  /// as compressed JPEGs to be animated smoothly in grid items.
+  Future<Uint8List?> getVideoThumbnail(MountedContainer container, String fileName) async {
+    try {
+     final Uint8List? bytes = await _channel.invokeMethod<Uint8List>('getVideoThumbnail', {
+        'filePath': container.uri,
+        'fileName': fileName,
+      });
+      return bytes;
+    } catch (e) {
+      _channel.setMethodCallHandler(null);
+      return null;
+    }
   }
 }
 

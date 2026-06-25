@@ -245,24 +245,6 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
                 const SizedBox(height: 24),
 
-                // ── Advanced ───────────────────────────────────────────────
-                _SectionLabel('ADVANCED', cs),
-                const SizedBox(height: 8),
-                _Card(cs: cs, children: [
-                  _ToggleRow(
-                    icon: Icons.shield_outlined,
-                    title: 'Root mount (FUSE)',
-                    subtitle: 'Mount containers as native filesystem via root '
-                        'access. Best performance — requires a rooted device '
-                        'with veracrypt CLI installed.',
-                    value: _settings.useRootMount,
-                    cs: cs,
-                    onChanged: (v) => setState(() => _settings.useRootMount = v),
-                  ),
-                ]),
-
-                const SizedBox(height: 24),
-
                 // ── About ──────────────────────────────────────────────────
                 _SectionLabel('ABOUT', cs),
                 const SizedBox(height: 8),
