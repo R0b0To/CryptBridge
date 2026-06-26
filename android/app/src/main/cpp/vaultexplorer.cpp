@@ -20,7 +20,7 @@
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "VaultExplorer_C++", __VA_ARGS__)
 
-#define MAX_VOLUMES 8
+#define MAX_VOLUMES FF_VOLUMES
 
 // ----------------------------------------------------------------====
 // GLOBAL STATE
@@ -37,7 +37,7 @@ static bool           fsMounted[MAX_VOLUMES];
 static mbedtls_aes_xts_context activeDataCtxDec[MAX_VOLUMES];
 static mbedtls_aes_xts_context activeDataCtxEnc[MAX_VOLUMES];
 
-// Drive paths for up to 4 volumes — FatFs uses single-digit drive numbers.
+// Drive paths for up to MAX_VOLUMES volumes — FatFs uses single-digit drive numbers.
 static const char* drivePaths[MAX_VOLUMES] = {
     "0:", "1:", "2:", "3:", "4:", "5:", "6:", "7:"
 };
@@ -60,9 +60,6 @@ static bool _globalInit = [](){
 // MOUNT CACHE HELPERS
 // ----------------------------------------------------------------====
 
-// Mounts the FatFs volume for `volId` only if it isn't already mounted.
-// Must be called *after* prepareSession() so activeFd[volId] (used by the
-// disk_read/disk_write hooks below) is valid at mount time.
 static bool ensureMounted(int volId) {
     if (volId < 0 || volId >= MAX_VOLUMES) return false;
     if (fsMounted[volId]) return true;
@@ -88,12 +85,6 @@ static void unmountVolume(int volId) {
 // INLINE HELPERS
 // ----------------------------------------------------------------====
 
-// Strips only genuinely unsafe control characters (and DEL). Bytes >= 0x80
-// are left untouched because they are valid lead/continuation bytes of
-// multi-byte UTF-8 sequences — FatFs is now configured for native UTF-8
-// long file names (FF_LFN_UNICODE=2 in ffconf.h), so stripping them used to
-// silently corrupt every accented/CJK/emoji file name byte-by-byte
-// (review issue #3).
 static inline bool isUnsafeControlChar(unsigned char c) {
     return c < 32 || c == 127;
 }
@@ -107,11 +98,6 @@ static inline void setTweak(unsigned char* tweak, uint64_t sectorNum) {
     *reinterpret_cast<uint64_t*>(tweak+8) = 0ULL;
 }
 
-// Clamps a user/JNI-supplied PIM to a sane, bounded range. An unclamped
-// negative or huge PIM either silently fell back to the (already safe)
-// default, or could otherwise be abused to request an absurd number of
-// PBKDF2 iterations; we bound it defensively here regardless of what the
-// Dart layer already validates.
 static inline int clampPim(int pim) {
     if (pim < 0) return 0;
     if (pim > 2000) return 2000;
@@ -147,6 +133,8 @@ extern "C" DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count) {
     if (pdrv >= MAX_VOLUMES || activeFd[pdrv] < 0 || !isDataCtxInitialized[pdrv])
         return RES_NOTRDY;
 
+    if (count == 0 || count > 8192) return RES_PARERR;
+
     const uint64_t basePhysical = activeDataOffset[pdrv] / 512;
     const bool relTweak = activeIsRelTweak[pdrv];
     const int fd = activeFd[pdrv];
@@ -172,7 +160,6 @@ extern "C" DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count) {
 extern "C" DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count) {
     if (pdrv >= MAX_VOLUMES || activeFd[pdrv] < 0 || !isDataCtxInitialized[pdrv])
         return RES_NOTRDY;
-    // Sanity-cap: FatFs never legitimately issues > 8192 sectors in one call.
     if (count == 0 || count > 8192) return RES_PARERR;
 
     const uint64_t basePhysical = activeDataOffset[pdrv] / 512;
@@ -181,8 +168,6 @@ extern "C" DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT co
     const uint64_t firstPhysical = basePhysical + sector;
     const size_t   totalBytes    = static_cast<size_t>(count) * 512;
 
-    // FIX: replaced static thread_local fixed-size stack buffer (32 KB, overflow for count > 64)
-    // with heap allocation sized exactly to the request.
     std::unique_ptr<unsigned char[]> encBuf(new unsigned char[totalBytes]);
 
     for (UINT i = 0; i < count; i++) {
@@ -276,8 +261,10 @@ bool prepareSession(int fd, const char* password, int pim, int volId, bool force
         mbedtls_aes_xts_free(&xts);
     }
 
-    if (decH[0] != 'V' || decH[1] != 'E' || decH[2] != 'R' || decH[3] != 'A')
+    if (decH[0] != 'V' || decH[1] != 'E' || decH[2] != 'R' || decH[3] != 'A') {
+        mbedtls_platform_zeroize(hKey, sizeof(hKey));
         return false;
+    }
 
     const int keyOffsets[] = {252, 192};
 
@@ -423,10 +410,6 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_unlockAndListNative(
 
     jobjectArray result = nullptr;
     if (ensureMounted(volId)) {
-        // Left mounted intentionally — subsequent calls for this volId
-        // (listDirectory, readFileChunk, etc.) reuse the mount instead of
-        // re-parsing the FAT/exFAT volume metadata every time. Only
-        // lockNative() unmounts.
         result = buildDirectoryListing(env, volId, nullptr);
     } else {
         LOGI("FATFS Mount failed on volume %d", volId);
@@ -551,8 +534,6 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_lockNative(JNIEnv*, jobject, jin
         isDataCtxInitialized[volId] = false;
     }
 
-    // Only place a volume actually gets unmounted now that mounts are
-    // cached for the life of the session (see ensureMounted()/issue #6).
     unmountVolume(volId);
 }
 
@@ -594,9 +575,6 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_readFileChunkNative(
 
     jbyteArray retArray = nullptr;
     if (prepareSession(fd, nativePass, pim, volId, false)) {
-        // This is the hot path for video/image streaming — previously every
-        // single chunk read remounted the whole FAT/exFAT volume. Now the
-        // mount is reused for the entire session (issue #6).
         if (ensureMounted(volId)) {
             FIL f;
             std::string fatPath = std::string(drivePaths[volId]) + "/" + targetName;
@@ -781,34 +759,19 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createContainerNative(
         unsigned char body[448];
         memset(body, 0, sizeof(body));
 
-        // ASCII magic
         body[0] = 'V'; body[1] = 'E'; body[2] = 'R'; body[3] = 'A';
-        
-        // Volume header format version (2 for standard VeraCrypt)
         body[4] = 0x00; body[5] = 0x02;
-        
-        // Minimum program version required (0x010b = 267 for VeraCrypt 1.11+)
         body[6] = 0x01; body[7] = 0x0b;
 
-        // Volume size in bytes (Sector offset 100 -> body[36..43])
         for (int i = 7; i >= 0; --i)
             body[36 + (7 - i)] = (VOLUME_SIZE >> (i * 8)) & 0xFF;
-
-        // Start offset of master key scope (Sector offset 108 -> body[44..51])
         for (int i = 7; i >= 0; --i)
             body[44 + (7 - i)] = (DATA_OFFSET >> (i * 8)) & 0xFF;
-
-        // Encrypted area size within master key scope (Sector offset 116 -> body[52..59])
         for (int i = 7; i >= 0; --i)
             body[52 + (7 - i)] = (DATA_SIZE >> (i * 8)) & 0xFF;
 
-        // Sector size (512 bytes) (Sector offset 128 -> body[64..67])
-        body[64] = 0x00;
-        body[65] = 0x00;
-        body[66] = 0x02;
-        body[67] = 0x00;
+        body[64] = 0x00; body[65] = 0x00; body[66] = 0x02; body[67] = 0x00;
 
-        // Master keys start at sector offset 256 (body[192..255])
         memcpy(&body[192], combinedMasterKey, 64);
 
         auto crc32 = [](const unsigned char* data, size_t len) -> uint32_t {
@@ -821,18 +784,16 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createContainerNative(
             return crc ^ 0xFFFFFFFFu;
         };
 
-        // Key CRC at sector offset 72 (body[8..11]) covers decrypted bytes 256-511 (body[192..447], size 256)
         uint32_t keyCrc = crc32(&body[192], 256);
-        body[ 8] = (keyCrc >> 24) & 0xFF; 
+        body[ 8] = (keyCrc >> 24) & 0xFF;
         body[ 9] = (keyCrc >> 16) & 0xFF;
-        body[10] = (keyCrc >>  8) & 0xFF; 
+        body[10] = (keyCrc >>  8) & 0xFF;
         body[11] = (keyCrc      ) & 0xFF;
 
-        // Header CRC at sector offset 252 (body[188..191]) covers decrypted bytes 64-251 (body[0..187], size 188)
         uint32_t hdrCrc = crc32(body, 188);
-        body[188] = (hdrCrc >> 24) & 0xFF; 
+        body[188] = (hdrCrc >> 24) & 0xFF;
         body[189] = (hdrCrc >> 16) & 0xFF;
-        body[190] = (hdrCrc >>  8) & 0xFF; 
+        body[190] = (hdrCrc >>  8) & 0xFF;
         body[191] = (hdrCrc      ) & 0xFF;
 
         unsigned char encBody[448];
@@ -844,6 +805,8 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createContainerNative(
             mbedtls_aes_crypt_xts(&xtsHdr, MBEDTLS_AES_ENCRYPT, 448, zeroTweak, body, encBody);
             mbedtls_aes_xts_free(&xtsHdr);
         }
+
+        mbedtls_platform_zeroize(headerKey, sizeof(headerKey));
 
         unsigned char hdrSector[512];
         memcpy(hdrSector,      salt,    64);
@@ -925,9 +888,6 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createContainerNative(
             LOGI("createContainer: f_mkfs result=%d fmt=%d exfat=%d",
                  (int)fr, (int)mp.fmt, (int)useExFat);
 
-            // This volume slot is not part of the persistent-mount session
-            // cache (fsMounted[] was never set for it via ensureMounted),
-            // so we unmount it directly here regardless of that tracking.
             f_mount(nullptr, drivePaths[volId], 0);
             activeFd[volId]           = -1;
             activeDataOffset[volId]   = 0;
@@ -976,12 +936,11 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_writeFileChunkNative(
         if (ensureMounted(volId)) {
             FIL f;
             std::string fatPath = std::string(drivePaths[volId]) + "/" + targetName;
-            
-            // FA_WRITE | FA_OPEN_ALWAYS allows writing to any offset, creating the file if missing
             if (f_open(&f, fatPath.c_str(), FA_WRITE | FA_OPEN_ALWAYS) == FR_OK) {
                 if (f_lseek(&f, static_cast<FSIZE_t>(offset)) == FR_OK) {
                     UINT bw = 0;
-                    if (f_write(&f, body, static_cast<UINT>(len), &bw) == FR_OK && bw == static_cast<UINT>(len)) {
+                    if (f_write(&f, body, static_cast<UINT>(len), &bw) == FR_OK &&
+                        bw == static_cast<UINT>(len)) {
                         success = true;
                     }
                 }
@@ -995,4 +954,54 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_writeFileChunkNative(
     env->ReleaseStringUTFChars(targetFileName, targetName);
     close(fd);
     return success ? JNI_TRUE : JNI_FALSE;
+}
+
+// ----------------------------------------------------------------====
+// PBKDF2-SHA512 — exposed for master-password hashing on the Dart side.
+// ----------------------------------------------------------------====
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_hashPasswordNative(
+        JNIEnv* env, jobject,
+        jstring password, jbyteArray salt, jint iterations) {
+
+    if (password == nullptr || salt == nullptr) return nullptr;
+
+    const jsize saltLen = env->GetArrayLength(salt);
+    if (saltLen == 0) return nullptr;  // zero-length salt is invalid
+
+    const char* nativePass = env->GetStringUTFChars(password, nullptr);
+    jbyte* saltData        = env->GetByteArrayElements(salt, nullptr);
+
+    unsigned char out[64] = {0};
+    jbyteArray result     = nullptr;
+
+    const unsigned int safeIter =
+        (iterations > 0) ? static_cast<unsigned int>(iterations) : 200000u;
+
+    mbedtls_md_context_t md_ctx;
+    mbedtls_md_init(&md_ctx);
+
+    if (mbedtls_md_setup(&md_ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA512), 1) == 0) {
+        int rc = mbedtls_pkcs5_pbkdf2_hmac(
+            &md_ctx,
+            reinterpret_cast<const unsigned char*>(nativePass), strlen(nativePass),
+            reinterpret_cast<const unsigned char*>(saltData),   static_cast<size_t>(saltLen),
+            safeIter, 64, out);
+
+        if (rc == 0) {
+            result = env->NewByteArray(64);
+            env->SetByteArrayRegion(result, 0, 64, reinterpret_cast<jbyte*>(out));
+        } else {
+            LOGI("hashPasswordNative: PBKDF2 failed, rc=%d", rc);
+        }
+    }
+
+    mbedtls_md_free(&md_ctx);
+    mbedtls_platform_zeroize(out, sizeof(out));
+
+    env->ReleaseStringUTFChars(password, nativePass);
+    env->ReleaseByteArrayElements(salt, saltData, JNI_ABORT);
+
+    return result;
 }

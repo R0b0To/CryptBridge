@@ -44,5 +44,6 @@ object VeraCryptEngine {
     @JvmStatic
     external fun createContainerNative(fd: Int, password: String, pim: Int, sizeBytes: Long, fileSystem: String): Boolean
 
-    
+    @JvmStatic
+    external fun hashPasswordNative(password: String, salt: ByteArray, iterations: Int): ByteArray?
 }

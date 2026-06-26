@@ -6,7 +6,6 @@ class ContainerConfigSheet extends StatefulWidget {
   final String currentLabel;
   final ContainerConfig? existingConfig;
   final void Function(ContainerConfig config) onSaved;
-  /// Called when the user taps "Remove from dashboard" inside this sheet.
   final VoidCallback? onForget;
 
   const ContainerConfigSheet({
@@ -29,7 +28,7 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
   late bool _showPassword;
   late int _autoCloseMins;
   late bool _documentProvider;
-  bool _saving = false;
+  bool _saving          = false;
   bool _loadingPassword = true;
 
   static const _autoCloseOptions = [0, 1, 2, 5, 10, 15, 30, 60];
@@ -37,13 +36,13 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
   @override
   void initState() {
     super.initState();
-    final cfg = widget.existingConfig;
-    _labelCtrl = TextEditingController(
+    final cfg       = widget.existingConfig;
+    _labelCtrl      = TextEditingController(
         text: cfg?.label.isNotEmpty == true ? cfg!.label : widget.currentLabel);
-    _passwordCtrl = TextEditingController();
+    _passwordCtrl   = TextEditingController();
     _rememberPassword = cfg?.rememberPassword ?? false;
-    _showPassword = false;
-    _autoCloseMins = cfg?.autoCloseMins ?? 0;
+    _showPassword   = false;
+    _autoCloseMins  = cfg?.autoCloseMins ?? 0;
     _documentProvider = cfg?.documentProvider ?? false;
     _loadSavedPassword();
   }
@@ -51,9 +50,7 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
   Future<void> _loadSavedPassword() async {
     if (widget.existingConfig?.rememberPassword == true) {
       final plain = await widget.existingConfig!.getPassword();
-      if (mounted) {
-        _passwordCtrl.text = plain ?? '';
-      }
+      if (mounted) _passwordCtrl.text = plain ?? '';
     }
     if (mounted) setState(() => _loadingPassword = false);
   }
@@ -78,6 +75,9 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
     );
     if (_rememberPassword && _passwordCtrl.text.isNotEmpty) {
       await config.setPassword(_passwordCtrl.text);
+    } else if (!_rememberPassword) {
+      // Clear any previously stored password when the user turns off remembering.
+      await config.clearPassword();
     }
     await AppSettingsService.saveContainerConfig(config);
     widget.onSaved(config);
@@ -86,12 +86,10 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final mq = MediaQuery.of(context);
+    final mq        = MediaQuery.of(context);
 
-    // We use Padding instead of a decorated Container.
-    // The framework's native BottomSheet automatically renders the unified background color.
     return Padding(
       padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
       child: SafeArea(
@@ -106,12 +104,9 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 Row(children: [
                   Icon(Icons.settings_rounded, size: 20, color: cs.primary),
                   const SizedBox(width: 10),
-                  Text(
-                    'Container Settings',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  Text('Container Settings',
+                      style: textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
                 ]),
                 const SizedBox(height: 20),
 
@@ -120,7 +115,8 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                   controller: _labelCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Display Name',
-                    prefixIcon: Icon(Icons.label_outline_rounded, size: 18),
+                    prefixIcon:
+                        Icon(Icons.label_outline_rounded, size: 18),
                     hintText: 'My Vault',
                   ),
                 ),
@@ -132,7 +128,8 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 _ToggleRow(
                   icon: Icons.key_rounded,
                   title: 'Remember password',
-                  subtitle: 'Obfuscated and stored in app data',
+                  // FIX: updated subtitle to reflect Android Keystore storage.
+                  subtitle: 'Stored securely in Android Keystore',
                   value: _rememberPassword,
                   cs: cs,
                   onChanged: (v) => setState(() {
@@ -143,8 +140,11 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 if (_rememberPassword) ...[
                   const SizedBox(height: 14),
                   if (_loadingPassword)
-                    const Center(child: SizedBox(width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2)))
+                    const Center(
+                        child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2)))
                   else
                     TextField(
                       controller: _passwordCtrl,
@@ -153,25 +153,30 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                         labelText: 'Container password',
                         prefixIcon: const Icon(Icons.lock_rounded, size: 18),
                         suffixIcon: IconButton(
-                          icon: Icon(_showPassword
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded, size: 18),
-                          onPressed: () => setState(() => _showPassword = !_showPassword),
+                          icon: Icon(
+                              _showPassword
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                              size: 18),
+                          onPressed: () =>
+                              setState(() => _showPassword = !_showPassword),
                         ),
                         hintText: 'Enter container password',
                       ),
                     ),
                   const SizedBox(height: 8),
                   Row(children: [
-                    Icon(Icons.security_rounded, size: 14, color: cs.onSurfaceVariant),
+                    Icon(Icons.security_rounded,
+                        size: 14, color: cs.onSurfaceVariant),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Stored obfuscated. Not cryptographically secure — '
-                        'do not use if device root access is a concern.',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
+                        // FIX: accurate security description after Keystore migration.
+                        'Password is encrypted with a device-bound key in Android '
+                        'Keystore.  It is protected even if the APK is extracted, '
+                        'but not if the device is rooted and the Keystore is bypassed.',
+                        style: textTheme.bodySmall
+                            ?.copyWith(color: cs.onSurfaceVariant),
                       ),
                     ),
                   ]),
@@ -188,11 +193,16 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                     prefixIcon: Icon(Icons.timer_rounded, size: 18),
                   ),
                   items: _autoCloseOptions.map((mins) {
-                    final label = mins == 0 ? 'Never'
-                        : mins == 1 ? '1 minute' : '$mins minutes';
+                    final label = mins == 0
+                        ? 'Never'
+                        : mins == 1
+                            ? '1 minute'
+                            : '$mins minutes';
                     return DropdownMenuItem(value: mins, child: Text(label));
                   }).toList(),
-                  onChanged: (v) { if (v != null) setState(() => _autoCloseMins = v); },
+                  onChanged: (v) {
+                    if (v != null) setState(() => _autoCloseMins = v);
+                  },
                 ),
                 const SizedBox(height: 16),
 
@@ -202,11 +212,13 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 _ToggleRow(
                   icon: Icons.folder_shared_rounded,
                   title: 'Expose as Document Provider',
-                  subtitle: 'Makes this container visible in Android\'s '
-                      'system file picker when unlocked',
+                  subtitle:
+                      'Makes this container visible in Android\'s system file '
+                      'picker when unlocked',
                   value: _documentProvider,
                   cs: cs,
-                  onChanged: (v) => setState(() => _documentProvider = v),
+                  onChanged: (v) =>
+                      setState(() => _documentProvider = v),
                 ),
                 const SizedBox(height: 24),
 
@@ -219,12 +231,9 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                     },
                     icon: Icon(Icons.delete_outline_rounded,
                         size: 18, color: cs.error),
-                    label: Text(
-                      'Remove from dashboard',
-                      style: textTheme.labelLarge?.copyWith(
-                        color: cs.error,
-                      ),
-                    ),
+                    label: Text('Remove from dashboard',
+                        style:
+                            textTheme.labelLarge?.copyWith(color: cs.error)),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -233,16 +242,14 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 FilledButton(
                   onPressed: _saving ? null : _save,
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
+                      minimumSize: const Size(double.infinity, 48)),
                   child: _saving
                       ? SizedBox(
                           width: 20, height: 20,
                           child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation(cs.onPrimary),
-                          ),
-                        )
+                              strokeWidth: 2.5,
+                              valueColor:
+                                  AlwaysStoppedAnimation(cs.onPrimary)))
                       : const Text('Save'),
                 ),
               ],
@@ -264,14 +271,12 @@ class _SectionHeader extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Text(
-        label.toUpperCase(),
-        style: textTheme.labelSmall?.copyWith(
-          color: cs.primary,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
-      ),
+      child: Text(label.toUpperCase(),
+          style: textTheme.labelSmall?.copyWith(
+            color: cs.primary,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.2,
+          )),
     );
   }
 }
@@ -304,19 +309,13 @@ class _ToggleRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title, 
-                style: textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              Text(title,
+                  style: textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w500)),
               const SizedBox(height: 2),
-              Text(
-                subtitle, 
-                style: textTheme.bodySmall?.copyWith(
-                  color: cs.onSurfaceVariant,
-                ),
-              ),
+              Text(subtitle,
+                  style: textTheme.bodySmall
+                      ?.copyWith(color: cs.onSurfaceVariant)),
             ],
           ),
         ),

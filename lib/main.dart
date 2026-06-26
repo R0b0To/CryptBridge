@@ -1,10 +1,19 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:fvp/fvp.dart' as fvp;
+import 'package:path_provider/path_provider.dart';
 import 'theme.dart';
 import 'screens/lock/lock_gate_screen.dart';
 
-void main() {
+void main() async {
+  // Ensure bindings are initialised before calling path_provider.
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // clean up any decrypted temp files left behind by a
+  // previous crash or force-kill before the copy/paste finally{} block ran.
+  await _cleanupOrphanedTempFiles();
+
   PlatformDispatcher.instance.onError = (error, stack) {
     final errStr = error.toString();
     if (errStr.contains('Cannot add event after closing') ||
@@ -21,6 +30,29 @@ void main() {
   runApp(const VaultExplorerApp());
 }
 
+/// Deletes any temp files written during copy/paste or export that were not
+/// cleaned up because the process was killed between decryption and the
+/// finally{} block.  Prefixes match [TempFileUtils] and [VaultExplorerApi].
+Future<void> _cleanupOrphanedTempFiles() async {
+  try {
+    final tmpDir = await getTemporaryDirectory();
+    for (final entity in tmpDir.listSync()) {
+      if (entity is! File) continue;
+      final name = entity.path.split('/').last;
+      // Matches the prefixes used by TempFileUtils.uniquePath and
+      // VaultExplorerApi.createEmptyFile.
+      if (name.startsWith('cb_copy_') ||
+          name.startsWith('cb_empty_') ||
+          name.startsWith('xclip_') ||
+          name.startsWith('tmp_')) {
+        try {
+          await entity.delete();
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
 class VaultExplorerApp extends StatelessWidget {
   const VaultExplorerApp({Key? key}) : super(key: key);
 
@@ -30,8 +62,6 @@ class VaultExplorerApp extends StatelessWidget {
       title: 'VaultExplorer',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      // LockGateScreen checks settings and either goes to dashboard directly
-      // (no master password set) or shows the unlock UI.
       home: const LockGateScreen(),
     );
   }

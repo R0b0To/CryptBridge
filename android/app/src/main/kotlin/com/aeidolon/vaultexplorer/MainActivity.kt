@@ -18,46 +18,73 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
-import java.io.RandomAccessFile
-import java.nio.channels.FileChannel
 import android.annotation.TargetApi
 import android.graphics.Bitmap
 import android.media.MediaDataSource
 import android.media.MediaMetadataRetriever
 import java.io.ByteArrayOutputStream
 
+// Kotlin mirror of lib/services/channel_methods.dart — keep in sync.
+private object ChannelMethods {
+    const val PICK_CONTAINER      = "pickContainer"
+    const val CREATE_CONTAINER    = "createContainer"
+    const val UNLOCK_CONTAINER    = "unlockContainer"
+    const val LOCK_CONTAINER      = "lockContainer"
+    const val DECRYPT_FILE        = "decryptFile"
+    const val EXPORT_FILE         = "exportFileToStorage"
+    const val EXPORT_FILES_FOLDER = "exportFilesToFolder"
+    const val IMPORT_FILE         = "importFile"
+    const val IMPORT_FOLDER       = "importFolder"
+    const val GET_FILE_SIZE       = "getFileSize"
+    const val READ_FILE_CHUNK     = "readFileChunk"
+    const val WRITE_BACK_FILE     = "writeBackFile"
+    const val GET_SPACE_INFO      = "getSpaceInfo"
+    const val LIST_DIRECTORY      = "listDirectory"
+    const val CREATE_DIRECTORY    = "createDirectory"
+    const val RENAME_FILE         = "renameFile"
+    const val DELETE_FILE         = "deleteFile"
+    const val OPEN_WITH_APP       = "openWithApp"
+    const val GET_VIDEO_THUMBNAIL = "getVideoThumbnail"
+    const val HASH_PASSWORD       = "hashPassword"
+}
+
 class MainActivity : FlutterFragmentActivity() {
+
+    companion object {
+        private val createContainerLock = Object()
+    }
+
     private val CHANNEL = "com.aeidolon.vaultexplorer/engine"
-    private val PICK_CONTAINER_REQUEST   = 1001
-    private val IMPORT_FILE_REQUEST      = 1002
-    private val EXPORT_FILE_REQUEST      = 1003
-    private val CREATE_CONTAINER_REQUEST = 1004
-    private val EXPORT_FILES_TREE_REQUEST  = 1006
+    private val PICK_CONTAINER_REQUEST    = 1001
+    private val IMPORT_FILE_REQUEST       = 1002
+    private val EXPORT_FILE_REQUEST       = 1003
+    private val CREATE_CONTAINER_REQUEST  = 1004
+    private val EXPORT_FILES_TREE_REQUEST = 1006
     private val IMPORT_FOLDER_TREE_REQUEST = 1007
 
     private var pendingFlutterResult: MethodChannel.Result? = null
 
     private var pendingImportContainerUri: String? = null
-    private var pendingImportTargetName: String? = null
-    private var pendingImportVolId: Int = 0
+    private var pendingImportTargetName: String?   = null
+    private var pendingImportVolId: Int?            = null   // FIX: nullable — null means "not resolved"
 
     private var pendingExportContainerUri: String? = null
-    private var pendingExportSourcePath: String? = null
-    private var pendingExportVolId: Int = 0
+    private var pendingExportSourcePath: String?   = null
+    private var pendingExportVolId: Int            = 0
 
-    private var pendingCreateName: String? = null
-    private var pendingCreateSize: Long = 0L
-    private var pendingCreatePassword: String? = null
-    private var pendingCreatePim: Int = 0
+    private var pendingCreateName: String?       = null
+    private var pendingCreateSize: Long          = 0L
+    private var pendingCreatePassword: String?   = null
+    private var pendingCreatePim: Int            = 0
     private var pendingCreateFileSystem: String? = null
 
     private var pendingImportFolderContainerUri: String? = null
-    private var pendingImportFolderTargetDir: String? = null
-    private var pendingImportFolderVolId: Int = 0
+    private var pendingImportFolderTargetDir: String?    = null
+    private var pendingImportFolderVolId: Int?           = null  // FIX: nullable
 
-    private var pendingExportMultiContainerUri: String? = null
+    private var pendingExportMultiContainerUri: String?          = null
     private var pendingExportMultiItems: List<Map<String, Any?>>? = null
-    private var pendingExportMultiVolId: Int = 0
+    private var pendingExportMultiVolId: Int                      = 0
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -87,15 +114,12 @@ class MainActivity : FlutterFragmentActivity() {
         } catch (_: Exception) {}
     }
 
-    // ── Document-provider notification helper ─────────────────────────────────
-
     private fun notifyRootsIfEnabled(uriString: String) {
-        val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: return
+        val volId   = VeraCryptSession.getVolumeIdByUri(uriString) ?: return
         val session = VeraCryptSession.activeSessions[volId] ?: return
         if (session.documentProvider) {
             contentResolver.notifyChange(
-                DocumentsContract.buildRootsUri("com.aeidolon.vaultexplorer.documents"), null
-            )
+                DocumentsContract.buildRootsUri("com.aeidolon.vaultexplorer.documents"), null)
         }
     }
 
@@ -106,7 +130,7 @@ class MainActivity : FlutterFragmentActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
 
-                    "pickContainer" -> {
+                    ChannelMethods.PICK_CONTAINER -> {
                         pendingResultCheck(result)
                         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE)
@@ -115,7 +139,7 @@ class MainActivity : FlutterFragmentActivity() {
                         startActivityForResult(intent, PICK_CONTAINER_REQUEST)
                     }
 
-                    "createContainer" -> {
+                    ChannelMethods.CREATE_CONTAINER -> {
                         pendingResultCheck(result)
                         pendingCreateName       = call.argument<String>("displayName")
                         pendingCreateSize       = call.argument<Number>("sizeBytes")?.toLong() ?: 0L
@@ -130,7 +154,7 @@ class MainActivity : FlutterFragmentActivity() {
                         startActivityForResult(intent, CREATE_CONTAINER_REQUEST)
                     }
 
-                    "unlockContainer" -> {
+                    ChannelMethods.UNLOCK_CONTAINER -> {
                         val uriString   = call.argument<String>("filePath")
                         val password    = call.argument<String>("password")
                         val pim         = call.argument<Number>("pim")?.toInt() ?: 0
@@ -172,8 +196,7 @@ class MainActivity : FlutterFragmentActivity() {
                                         if (docProvider) {
                                             contentResolver.notifyChange(
                                                 DocumentsContract.buildRootsUri(
-                                                    "com.aeidolon.vaultexplorer.documents"), null
-                                            )
+                                                    "com.aeidolon.vaultexplorer.documents"), null)
                                         }
                                         result.success(mapOf(
                                             "volId" to targetVolId,
@@ -189,8 +212,27 @@ class MainActivity : FlutterFragmentActivity() {
                             }
                         }.start()
                     }
-                    
-"getVideoThumbnail" -> {
+
+                    ChannelMethods.HASH_PASSWORD -> {
+                        val password   = call.argument<String>("password")
+                        val saltBytes  = call.argument<ByteArray>("salt")
+                        val iterations = call.argument<Int>("iterations") ?: 200_000
+
+                        if (password == null || saltBytes == null || saltBytes.isEmpty()) {
+                            result.error("INVALID_ARGS", "password and non-empty salt required", null)
+                            return@setMethodCallHandler
+                        }
+
+                        Thread {
+                            val hash = VeraCryptEngine.hashPasswordNative(password, saltBytes, iterations)
+                            runOnUiThread {
+                                if (hash != null) result.success(hash)
+                                else result.error("KDF_FAILED", "PBKDF2 derivation failed", null)
+                            }
+                        }.start()
+                    }
+
+                    ChannelMethods.GET_VIDEO_THUMBNAIL -> {
                         val uriString = call.argument<String>("filePath")
                         val fileName  = call.argument<String>("fileName")
 
@@ -202,38 +244,32 @@ class MainActivity : FlutterFragmentActivity() {
                         Thread {
                             var retriever: MediaMetadataRetriever? = null
                             try {
-                                val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                retriever = MediaMetadataRetriever()
-                                
+                                val volId    = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
+                                retriever    = MediaMetadataRetriever()
+
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                                     val dataSource = VeraCryptMediaDataSource(this, uriString, fileName, volId)
                                     retriever.setDataSource(dataSource)
 
-                                    val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                                    val durationMs = durationStr?.toLongOrNull() ?: 10000L
-
-                                    // Extract exactly one frame at 1s (or 25% of duration if the video is extremely short)
+                                    val durationMs = retriever
+                                        .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                        ?.toLongOrNull() ?: 10_000L
                                     val timeMs = minOf(1000L, durationMs / 4)
-                                    
-                                    // Hardware/software decoder downscaling optimization (Requires Android 8.1+)
+
                                     val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                                        try {
+                                        runCatching {
                                             retriever.getScaledFrameAtTime(
                                                 timeMs * 1000L,
                                                 MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                                                180,
-                                                180
-                                            )
-                                        } catch (e: Exception) {
-                                            retriever.getFrameAtTime(timeMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                                        }
+                                                180, 180)
+                                        }.getOrNull()
+                                            ?: retriever.getFrameAtTime(timeMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                                     } else {
                                         retriever.getFrameAtTime(timeMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                                     }
-                                    
+
                                     if (frame != null) {
                                         val stream = ByteArrayOutputStream()
-                                        // Compress to JPEG 60% for a highly optimized thumbnail payload
                                         frame.compress(Bitmap.CompressFormat.JPEG, 60, stream)
                                         val bytes = stream.toByteArray()
                                         runOnUiThread { result.success(bytes) }
@@ -246,14 +282,12 @@ class MainActivity : FlutterFragmentActivity() {
                             } catch (e: Exception) {
                                 runOnUiThread { result.error("THUMBNAIL_ERROR", e.message, null) }
                             } finally {
-                                try {
-                                    retriever?.release()
-                                } catch (_: Exception) {}
+                                runCatching { retriever?.release() }
                             }
                         }.start()
                     }
 
-                    "lockContainer" -> {
+                    ChannelMethods.LOCK_CONTAINER -> {
                         val uriString = call.argument<String>("filePath")
                         if (uriString == null) {
                             result.error("INVALID_ARGS", "filePath is required", null)
@@ -278,224 +312,189 @@ class MainActivity : FlutterFragmentActivity() {
                         }
                     }
 
-                    "decryptFile" -> {
+                    ChannelMethods.DECRYPT_FILE -> {
                         val uriString = call.argument<String>("filePath")
                         val fileName  = call.argument<String>("fileName")
                         val destPath  = call.argument<String>("destPath")
                         if (uriString == null || fileName == null || destPath == null) {
-                            result.error("INVALID_ARGS", "All arguments required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "All arguments required", null); return@setMethodCallHandler
                         }
                         Thread {
                             try {
-                                val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                val pfd = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
+                                val volId   = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
+                                val pfd     = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
                                     ?: throw Exception("Could not open fd")
                                 val success = synchronized(VeraCryptSession.locks[volId]) {
-                                    VeraCryptEngine.unlockAndExtractNative(
-                                        pfd.detachFd(), "", 0, fileName, destPath, volId)
+                                    VeraCryptEngine.unlockAndExtractNative(pfd.detachFd(), "", 0, fileName, destPath, volId)
                                 }
                                 runOnUiThread { result.success(success) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("C++_CRASH", e.message, null) }
-                            }
+                            } catch (e: Exception) { runOnUiThread { result.error("C++_CRASH", e.message, null) } }
                         }.start()
                     }
 
-                    "getFileSize" -> {
+                    ChannelMethods.GET_FILE_SIZE -> {
                         val uriString = call.argument<String>("filePath")
                         val fileName  = call.argument<String>("fileName")
                         if (uriString == null || fileName == null) {
-                            result.error("INVALID_ARGS", "filePath and fileName required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "filePath and fileName required", null); return@setMethodCallHandler
                         }
                         Thread {
                             try {
                                 val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                val pfd = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
+                                val pfd   = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
                                     ?: throw Exception("Could not open fd")
-                                val size = synchronized(VeraCryptSession.locks[volId]) {
+                                val size  = synchronized(VeraCryptSession.locks[volId]) {
                                     VeraCryptEngine.getFileSizeNative(pfd.detachFd(), "", 0, fileName, volId)
                                 }
                                 runOnUiThread { result.success(size) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("C++_CRASH", e.message, null) }
-                            }
+                            } catch (e: Exception) { runOnUiThread { result.error("C++_CRASH", e.message, null) } }
                         }.start()
                     }
 
-                    "readFileChunk" -> {
+                    ChannelMethods.READ_FILE_CHUNK -> {
                         val uriString = call.argument<String>("filePath")
                         val fileName  = call.argument<String>("fileName")
                         val offset    = call.argument<Number>("offset")?.toLong() ?: 0L
                         val length    = call.argument<Number>("length")?.toInt() ?: 0
                         if (uriString == null || fileName == null) {
-                            result.error("INVALID_ARGS", "filePath and fileName required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "filePath and fileName required", null); return@setMethodCallHandler
                         }
                         Thread {
                             try {
                                 val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                val pfd = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
+                                val pfd   = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
                                     ?: throw Exception("Could not open fd")
                                 val bytes = synchronized(VeraCryptSession.locks[volId]) {
-                                    VeraCryptEngine.readFileChunkNative(
-                                        pfd.detachFd(), "", 0, fileName, offset, length, volId)
+                                    VeraCryptEngine.readFileChunkNative(pfd.detachFd(), "", 0, fileName, offset, length, volId)
                                 }
                                 runOnUiThread { result.success(bytes) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("C++_CRASH", e.message, null) }
-                            }
+                            } catch (e: Exception) { runOnUiThread { result.error("C++_CRASH", e.message, null) } }
                         }.start()
                     }
 
-                    "listDirectory" -> {
+                    ChannelMethods.LIST_DIRECTORY -> {
                         val uriString = call.argument<String>("filePath")
                         val dirPath   = call.argument<String>("dirPath") ?: ""
                         if (uriString == null) {
-                            result.error("INVALID_ARGS", "filePath is required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "filePath is required", null); return@setMethodCallHandler
                         }
                         Thread {
                             try {
                                 val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                val pfd = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
+                                val pfd   = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
                                     ?: throw Exception("Could not open fd")
                                 val files = synchronized(VeraCryptSession.locks[volId]) {
-                                    VeraCryptEngine.listDirectoryNative(
-                                        pfd.detachFd(), "", 0, dirPath, volId)
+                                    VeraCryptEngine.listDirectoryNative(pfd.detachFd(), "", 0, dirPath, volId)
                                 }
                                 runOnUiThread { result.success(files?.toList()) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("C++_ERROR", e.message, null) }
-                            }
+                            } catch (e: Exception) { runOnUiThread { result.error("C++_ERROR", e.message, null) } }
                         }.start()
                     }
 
-                    "createDirectory" -> {
+                    ChannelMethods.CREATE_DIRECTORY -> {
                         val uriString = call.argument<String>("filePath")
                         val dirPath   = call.argument<String>("dirPath")
                         if (uriString == null || dirPath == null) {
-                            result.error("INVALID_ARGS", "All arguments required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "All arguments required", null); return@setMethodCallHandler
                         }
                         Thread {
                             try {
-                                val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                val pfd = contentResolver.openFileDescriptor(Uri.parse(uriString), "rw")
+                                val volId   = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
+                                val pfd     = contentResolver.openFileDescriptor(Uri.parse(uriString), "rw")
                                     ?: throw Exception("Could not open fd")
                                 val success = synchronized(VeraCryptSession.locks[volId]) {
-                                    VeraCryptEngine.createDirectoryNative(
-                                        pfd.detachFd(), "", 0, dirPath, volId)
+                                    VeraCryptEngine.createDirectoryNative(pfd.detachFd(), "", 0, dirPath, volId)
                                 }
                                 runOnUiThread { result.success(success) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("C++_ERROR", e.message, null) }
-                            }
+                            } catch (e: Exception) { runOnUiThread { result.error("C++_ERROR", e.message, null) } }
                         }.start()
                     }
 
-                    "renameFile" -> {
+                    ChannelMethods.RENAME_FILE -> {
                         val uriString = call.argument<String>("filePath")
                         val oldPath   = call.argument<String>("oldPath")
                         val newPath   = call.argument<String>("newPath")
                         if (uriString == null || oldPath == null || newPath == null) {
-                            result.error("INVALID_ARGS", "All arguments required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "All arguments required", null); return@setMethodCallHandler
                         }
                         Thread {
                             try {
-                                val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                val pfd = contentResolver.openFileDescriptor(Uri.parse(uriString), "rw")
+                                val volId   = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
+                                val pfd     = contentResolver.openFileDescriptor(Uri.parse(uriString), "rw")
                                     ?: throw Exception("Could not open fd")
                                 val success = synchronized(VeraCryptSession.locks[volId]) {
-                                    VeraCryptEngine.renameFileNative(
-                                        pfd.detachFd(), "", 0, oldPath, newPath, volId)
+                                    VeraCryptEngine.renameFileNative(pfd.detachFd(), "", 0, oldPath, newPath, volId)
                                 }
                                 runOnUiThread { result.success(success) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("C++_ERROR", e.message, null) }
-                            }
+                            } catch (e: Exception) { runOnUiThread { result.error("C++_ERROR", e.message, null) } }
                         }.start()
                     }
 
-                    "writeBackFile" -> {
+                    ChannelMethods.WRITE_BACK_FILE -> {
                         val uriString  = call.argument<String>("filePath")
                         val fileName   = call.argument<String>("fileName")
                         val sourcePath = call.argument<String>("sourcePath")
                         if (uriString == null || fileName == null || sourcePath == null) {
-                            result.error("INVALID_ARGS", "All arguments required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "All arguments required", null); return@setMethodCallHandler
                         }
                         Thread {
                             try {
-                                val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                val pfd = contentResolver.openFileDescriptor(Uri.parse(uriString), "rw")
+                                val volId   = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
+                                val pfd     = contentResolver.openFileDescriptor(Uri.parse(uriString), "rw")
                                     ?: throw Exception("Could not open fd")
                                 val success = synchronized(VeraCryptSession.locks[volId]) {
-                                    VeraCryptEngine.writeBackFileNative(
-                                        pfd.detachFd(), "", 0, fileName, sourcePath, volId)
+                                    VeraCryptEngine.writeBackFileNative(pfd.detachFd(), "", 0, fileName, sourcePath, volId)
                                 }
                                 runOnUiThread { result.success(success) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("C++_ERROR", e.message, null) }
-                            }
+                            } catch (e: Exception) { runOnUiThread { result.error("C++_ERROR", e.message, null) } }
                         }.start()
                     }
 
-                    "getSpaceInfo" -> {
+                    ChannelMethods.GET_SPACE_INFO -> {
                         val uriString = call.argument<String>("filePath")
                         if (uriString == null) {
-                            result.error("INVALID_ARGS", "filePath is required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "filePath is required", null); return@setMethodCallHandler
                         }
                         Thread {
                             try {
                                 val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                val pfd = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
+                                val pfd   = contentResolver.openFileDescriptor(Uri.parse(uriString), "r")
                                     ?: throw Exception("Could not open fd")
                                 val space = synchronized(VeraCryptSession.locks[volId]) {
                                     VeraCryptEngine.getSpaceInfoNative(pfd.detachFd(), "", 0, volId)
                                 }
                                 runOnUiThread { result.success(space?.toList()) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("C++_CRASH", e.message, null) }
-                            }
+                            } catch (e: Exception) { runOnUiThread { result.error("C++_CRASH", e.message, null) } }
                         }.start()
                     }
 
-                    "deleteFile" -> {
+                    ChannelMethods.DELETE_FILE -> {
                         val uriString = call.argument<String>("filePath")
                         val fileName  = call.argument<String>("fileName")
                         if (uriString == null || fileName == null) {
-                            result.error("INVALID_ARGS", "All arguments required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "All arguments required", null); return@setMethodCallHandler
                         }
                         Thread {
                             try {
-                                val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
-                                val pfd = contentResolver.openFileDescriptor(Uri.parse(uriString), "rw")
+                                val volId   = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
+                                val pfd     = contentResolver.openFileDescriptor(Uri.parse(uriString), "rw")
                                     ?: throw Exception("Could not open fd")
                                 val success = synchronized(VeraCryptSession.locks[volId]) {
-                                    VeraCryptEngine.deleteFileNative(
-                                        pfd.detachFd(), "", 0, fileName, volId)
+                                    VeraCryptEngine.deleteFileNative(pfd.detachFd(), "", 0, fileName, volId)
                                 }
                                 runOnUiThread { result.success(success) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("C++_ERROR", e.message, null) }
-                            }
+                            } catch (e: Exception) { runOnUiThread { result.error("C++_ERROR", e.message, null) } }
                         }.start()
                     }
 
-                    "openWithApp" -> {
+                    ChannelMethods.OPEN_WITH_APP -> {
                         val uriString = call.argument<String>("filePath")
                         val fileName  = call.argument<String>("fileName")
                         if (uriString == null || fileName == null) {
-                            result.error("INVALID_ARGS", "filePath and fileName required", null)
-                            return@setMethodCallHandler
+                            result.error("INVALID_ARGS", "filePath and fileName required", null); return@setMethodCallHandler
                         }
                         try {
-                            val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
+                            val volId  = VeraCryptSession.getVolumeIdByUri(uriString) ?: 0
                             val docUri = DocumentsContract.buildDocumentUri(
                                 "com.aeidolon.vaultexplorer.documents", "$volId:file:$fileName")
                             val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -505,16 +504,23 @@ class MainActivity : FlutterFragmentActivity() {
                             }
                             startActivity(Intent.createChooser(intent, "Open file with…"))
                             result.success(true)
-                        } catch (e: Exception) {
-                            result.error("OPEN_WITH_ERROR", e.message, null)
-                        }
+                        } catch (e: Exception) { result.error("OPEN_WITH_ERROR", e.message, null) }
                     }
 
-                    "importFile" -> {
+                    ChannelMethods.IMPORT_FILE -> {
                         pendingResultCheck(result)
-                        pendingImportContainerUri = call.argument<String>("filePath")
+                        val containerUri = call.argument<String>("filePath")
+                        if (containerUri == null) {
+                            result.error("INVALID_ARGS", "filePath is required", null); return@setMethodCallHandler
+                        }
+                        
+                        val resolvedVolId = VeraCryptSession.getVolumeIdByUri(containerUri)
+                        if (resolvedVolId == null) {
+                            result.error("NOT_MOUNTED", "Container is not mounted", null); return@setMethodCallHandler
+                        }
+                        pendingImportContainerUri = containerUri
                         pendingImportTargetName   = call.argument<String>("targetPath")
-                        pendingImportVolId = VeraCryptSession.getVolumeIdByUri(pendingImportContainerUri!!) ?: 0
+                        pendingImportVolId        = resolvedVolId
                         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE)
                             type = "*/*"
@@ -522,25 +528,37 @@ class MainActivity : FlutterFragmentActivity() {
                         }, IMPORT_FILE_REQUEST)
                     }
 
-                    "exportFilesToFolder" -> {
+                    ChannelMethods.EXPORT_FILES_FOLDER -> {
                         pendingResultCheck(result)
-                        pendingExportMultiContainerUri = call.argument<String>("filePath")
+                        val containerUri = call.argument<String>("filePath")
+                        if (containerUri == null) {
+                            result.error("INVALID_ARGS", "filePath is required", null); return@setMethodCallHandler
+                        }
+                        pendingExportMultiContainerUri = containerUri
                         @Suppress("UNCHECKED_CAST")
                         pendingExportMultiItems = (call.argument<List<*>>("items"))
-                            ?.map { it as Map<String, Any?> } ?: emptyList()
-                        pendingExportMultiVolId = VeraCryptSession.getVolumeIdByUri(pendingExportMultiContainerUri!!) ?: 0
+                            ?.mapNotNull { it as? Map<String, Any?> } ?: emptyList()
+                        pendingExportMultiVolId = VeraCryptSession.getVolumeIdByUri(containerUri) ?: 0
                         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), EXPORT_FILES_TREE_REQUEST)
                     }
 
-                    "importFolder" -> {
+                    ChannelMethods.IMPORT_FOLDER -> {
                         pendingResultCheck(result)
-                        pendingImportFolderContainerUri = call.argument<String>("filePath")
+                        val containerUri = call.argument<String>("filePath")
+                        if (containerUri == null) {
+                            result.error("INVALID_ARGS", "filePath is required", null); return@setMethodCallHandler
+                        }
+                        val resolvedVolId = VeraCryptSession.getVolumeIdByUri(containerUri)
+                        if (resolvedVolId == null) {
+                            result.error("NOT_MOUNTED", "Container is not mounted", null); return@setMethodCallHandler
+                        }
+                        pendingImportFolderContainerUri = containerUri
                         pendingImportFolderTargetDir    = call.argument<String>("targetPath") ?: ""
-                        pendingImportFolderVolId = VeraCryptSession.getVolumeIdByUri(pendingImportFolderContainerUri!!) ?: 0
+                        pendingImportFolderVolId        = resolvedVolId
                         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), IMPORT_FOLDER_TREE_REQUEST)
                     }
 
-                    "exportFileToStorage" -> {
+                    ChannelMethods.EXPORT_FILE -> {
                         pendingResultCheck(result)
                         pendingExportContainerUri = call.argument<String>("filePath")
                         pendingExportSourcePath   = call.argument<String>("sourcePath")
@@ -600,7 +618,9 @@ class MainActivity : FlutterFragmentActivity() {
                         try {
                             val pfd = contentResolver.openFileDescriptor(destUri, "rw")
                                 ?: throw Exception("Could not open file descriptor")
-                            val success = VeraCryptEngine.createContainerNative(pfd.detachFd(), pass, pim, size, fs)
+                            val success = synchronized(createContainerLock) {
+                                VeraCryptEngine.createContainerNative(pfd.detachFd(), pass, pim, size, fs)
+                            }
                             runOnUiThread { res.success(success) }
                         } catch (e: Exception) { runOnUiThread { res.error("CREATE_ERROR", e.message, null) } }
                     }.start()
@@ -617,8 +637,8 @@ class MainActivity : FlutterFragmentActivity() {
                     ?: data.data?.let { uris.add(it) }
                 val containerUri = pendingImportContainerUri
                 val targetDir    = pendingImportTargetName ?: ""
-                val volId        = pendingImportVolId
-                if (containerUri != null && uris.isNotEmpty()) {
+                val volId        = pendingImportVolId  
+                if (containerUri != null && volId != null && uris.isNotEmpty()) {
                     Thread {
                         var successCount = 0
                         for (pickedUri in uris) {
@@ -631,6 +651,7 @@ class MainActivity : FlutterFragmentActivity() {
                     }.start()
                 } else res.success(0)
             } else res.success(0)
+            pendingImportVolId = null
             return
         }
 
@@ -671,8 +692,8 @@ class MainActivity : FlutterFragmentActivity() {
                 val targetDir    = pendingImportFolderTargetDir ?: ""
                 val volId        = pendingImportFolderVolId
                 val srcRoot      = DocumentFile.fromTreeUri(this, treeUri)
-                if (containerUri != null && srcRoot != null) {
-                    val folderName = srcRoot.name ?: "imported_folder"
+                if (containerUri != null && volId != null && srcRoot != null) {
+                    val folderName    = srcRoot.name ?: "imported_folder"
                     val targetFatPath = if (targetDir.isEmpty()) folderName else "$targetDir/$folderName"
                     Thread {
                         val count = importEntryRecursive(srcRoot, containerUri, targetFatPath, volId)
@@ -680,6 +701,7 @@ class MainActivity : FlutterFragmentActivity() {
                     }.start()
                 } else res.success(0)
             } else res.success(0)
+            pendingImportFolderVolId = null
             return
         }
 
@@ -710,9 +732,7 @@ class MainActivity : FlutterFragmentActivity() {
                                 tempFile.delete()
                                 runOnUiThread { res.success(false) }
                             }
-                        } catch (e: Exception) {
-                            runOnUiThread { res.error("EXPORT_ERROR", e.message, null) }
-                        }
+                        } catch (e: Exception) { runOnUiThread { res.error("EXPORT_ERROR", e.message, null) } }
                     }.start()
                 } else res.success(false)
             } else res.success(false)
@@ -729,7 +749,7 @@ class MainActivity : FlutterFragmentActivity() {
             return try {
                 val tempFile = File(cacheDir, "export_${System.nanoTime()}")
                 val pfd = contentResolver.openFileDescriptor(Uri.parse(containerUri), "r") ?: return 0
-                val ok = synchronized(VeraCryptSession.locks[volId]) {
+                val ok  = synchronized(VeraCryptSession.locks[volId]) {
                     VeraCryptEngine.unlockAndExtractNative(pfd.detachFd(), "", 0, fatPath, tempFile.absolutePath, volId)
                 }
                 var written = 0
@@ -783,8 +803,7 @@ class MainActivity : FlutterFragmentActivity() {
             }
             val writePfd = contentResolver.openFileDescriptor(Uri.parse(containerUri), "rw") ?: return 0
             val ok = synchronized(VeraCryptSession.locks[volId]) {
-                VeraCryptEngine.writeBackFileNative(
-                    writePfd.detachFd(), "", 0, targetFatPath, tempFile.absolutePath, volId)
+                VeraCryptEngine.writeBackFileNative(writePfd.detachFd(), "", 0, targetFatPath, tempFile.absolutePath, volId)
             }
             tempFile.delete()
             if (ok) 1 else 0
@@ -792,18 +811,20 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun getMimeType(fileName: String): String = when {
-        fileName.endsWith(".png",  true)                                   -> "image/png"
-        fileName.endsWith(".jpg",  true)||fileName.endsWith(".jpeg", true) -> "image/jpeg"
-        fileName.endsWith(".webp", true)                                   -> "image/webp"
-        fileName.endsWith(".gif",  true)                                   -> "image/gif"
-        fileName.endsWith(".mp4",  true)||fileName.endsWith(".m4v",  true) -> "video/mp4"
-        fileName.endsWith(".webm", true)                                   -> "video/webm"
-        fileName.endsWith(".mkv",  true)                                   -> "video/x-matroska"
-        fileName.endsWith(".txt",  true)                                   -> "text/plain"
-        fileName.endsWith(".pdf",  true)                                   -> "application/pdf"
-        else                                                               -> "application/octet-stream"
+        fileName.endsWith(".png",  true)                                    -> "image/png"
+        fileName.endsWith(".jpg",  true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
+        fileName.endsWith(".webp", true)                                    -> "image/webp"
+        fileName.endsWith(".gif",  true)                                    -> "image/gif"
+        fileName.endsWith(".mp4",  true) || fileName.endsWith(".m4v",  true) -> "video/mp4"
+        fileName.endsWith(".webm", true)                                    -> "video/webm"
+        fileName.endsWith(".mkv",  true)                                    -> "video/x-matroska"
+        fileName.endsWith(".txt",  true)                                    -> "text/plain"
+        fileName.endsWith(".pdf",  true)                                    -> "application/pdf"
+        else                                                                 -> "application/octet-stream"
     }
 }
+
+// ── VeraCryptMediaDataSource (unchanged — already uses dup() correctly) ───────
 
 @TargetApi(Build.VERSION_CODES.M)
 class VeraCryptMediaDataSource(
@@ -826,45 +847,32 @@ class VeraCryptMediaDataSource(
         if (cachedSize >= 0) return cachedSize
         val currentPfd = pfd ?: return 0L
         try {
-            val dupPfd = currentPfd.dup()
             cachedSize = synchronized(VeraCryptSession.locks[volId]) {
-                // Corrected: Queries the target file size instead of disk space info
-                VeraCryptEngine.getFileSizeNative(dupPfd.detachFd(), "", 0, fileName, volId)
+                VeraCryptEngine.getFileSizeNative(currentPfd.dup().detachFd(), "", 0, fileName, volId)
             }
-        } catch (e: Exception) {
-            cachedSize = 0L
-        }
+        } catch (_: Exception) { cachedSize = 0L }
         return cachedSize
     }
 
     override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
         val currentPfd = pfd ?: return -1
         val fileLength = getSize()
-        if (position >= fileLength) return -1 // EOF
-        
+        if (position >= fileLength) return -1
         val readSize = minOf(size.toLong(), fileLength - position).toInt()
         if (readSize <= 0) return -1
-        
         try {
-            val dupPfd = currentPfd.dup()
             val chunk = synchronized(VeraCryptSession.locks[volId]) {
                 VeraCryptEngine.readFileChunkNative(
-                    dupPfd.detachFd(), "", 0, fileName, position, readSize, volId
-                )
+                    currentPfd.dup().detachFd(), "", 0, fileName, position, readSize, volId)
             } ?: return -1
-            
             if (chunk.isEmpty()) return -1
             val actualRead = minOf(chunk.size, readSize)
             System.arraycopy(chunk, 0, buffer, offset, actualRead)
             return actualRead
-        } catch (e: Exception) {
-            return -1
-        }
+        } catch (_: Exception) { return -1 }
     }
 
     override fun close() {
-        try {
-            pfd?.close()
-        } catch (_: Exception) {}
+        runCatching { pfd?.close() }
     }
 }

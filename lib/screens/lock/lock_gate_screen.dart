@@ -45,7 +45,10 @@ class _LockGateScreenState extends State<LockGateScreen> {
       return;
     }
 
-    setState(() { _settings = s; _loading = false; });
+    setState(() {
+      _settings = s;
+      _loading  = false;
+    });
 
     if (s.masterPasswordIsFingerprint) {
       _tryBiometric();
@@ -54,7 +57,7 @@ class _LockGateScreenState extends State<LockGateScreen> {
 
   Future<void> _tryBiometric() async {
     try {
-      final canCheck = await _localAuth.canCheckBiometrics;
+      final canCheck   = await _localAuth.canCheckBiometrics;
       final isSupported = await _localAuth.isDeviceSupported();
       if (!canCheck || !isSupported) {
         if (mounted) setState(() => _error = 'Biometric not available on this device');
@@ -70,22 +73,48 @@ class _LockGateScreenState extends State<LockGateScreen> {
     }
   }
 
-  void _checkPassword() {
+  // FIX: now async — checkPassword calls PBKDF2 via the C++ layer.
+  Future<void> _checkPassword() async {
     final s = _settings;
     if (s == null) return;
     final pw = _pwCtrl.text;
-    if (pw.isEmpty) { setState(() => _error = 'Enter your master password'); return; }
+    if (pw.isEmpty) {
+      setState(() => _error = 'Enter your master password');
+      return;
+    }
     setState(() { _checking = true; _error = null; });
-    Future.delayed(const Duration(milliseconds: 80), () {
-      if (!mounted) return;
-      if (s.checkPassword(pw)) {
-        _goToDashboard();
-      } else {
-        HapticFeedback.heavyImpact();
-        setState(() { _error = 'Incorrect password'; _checking = false; });
-        _pwCtrl.clear();
+
+    // Small delay so the loading indicator renders before the PBKDF2 call
+    // consumes the thread for ~100 ms.
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    if (!mounted) return;
+
+    final ok = await s.checkPassword(pw);
+    if (!mounted) return;
+
+    if (ok) {
+      // FIX: silently upgrade legacy 32-bit hash to PBKDF2-SHA512 on first
+      // successful login so the user is not locked out during the transition.
+      if (s.needsHashUpgrade) {
+        _upgradeMasterPasswordHashInBackground(s, pw);
       }
-    });
+      _goToDashboard();
+    } else {
+      HapticFeedback.heavyImpact();
+      setState(() { _error = 'Incorrect password'; _checking = false; });
+      _pwCtrl.clear();
+    }
+  }
+
+  /// Runs the PBKDF2 key-derivation and persists the upgraded hash in the
+  /// background so it doesn't block navigation.  Non-fatal on failure —
+  /// the user will be prompted again on the next launch.
+  void _upgradeMasterPasswordHashInBackground(AppSettings s, String pw) {
+    AppSettings.derivePasswordHash(pw).then((hashSalt) async {
+      s.masterPasswordHash = hashSalt.$1;
+      s.masterPasswordSalt = hashSalt.$2;
+      await AppSettingsService.saveSettings(s);
+    }).catchError((_) {});
   }
 
   void _goToDashboard() {
@@ -96,14 +125,12 @@ class _LockGateScreenState extends State<LockGateScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     if (_loading) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(strokeWidth: 2.5),
-        ),
+        body: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
       );
     }
 
@@ -116,7 +143,6 @@ class _LockGateScreenState extends State<LockGateScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Soft M3 container for key visuals
                 Container(
                   width: 72, height: 72,
                   decoration: BoxDecoration(
@@ -130,16 +156,12 @@ class _LockGateScreenState extends State<LockGateScreen> {
                 Text(
                   'VaultExplorer',
                   style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.2,
-                  ),
+                    fontWeight: FontWeight.bold, letterSpacing: -0.2),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Enter your master password to continue',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
+                  style: textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 36),
@@ -152,31 +174,31 @@ class _LockGateScreenState extends State<LockGateScreen> {
                     labelText: 'Master Password',
                     prefixIcon: const Icon(Icons.key_rounded, size: 18),
                     suffixIcon: IconButton(
-                      icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18),
+                      icon: Icon(
+                          _obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 18),
                       onPressed: () => setState(() => _obscure = !_obscure),
                     ),
                   ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(
-                    _error!, 
-                    style: textTheme.bodySmall?.copyWith(
-                      color: cs.error,
-                    ),
-                  ),
+                  Text(_error!,
+                      style: textTheme.bodySmall?.copyWith(color: cs.error)),
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: _checking ? null : _checkPassword,
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48), // Touch target compliance
+                    minimumSize: const Size(double.infinity, 48),
                   ),
                   child: _checking
                       ? SizedBox(
                           width: 20, height: 20,
                           child: CircularProgressIndicator(
-                            strokeWidth: 2.5, 
+                            strokeWidth: 2.5,
                             valueColor: AlwaysStoppedAnimation(cs.onPrimary),
                           ),
                         )

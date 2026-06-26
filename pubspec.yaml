@@ -1,7 +1,7 @@
 name: vaultexplorer
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.8.6+1
+version: 0.8.7+1
 
 environment:
   sdk: ^3.12.0
@@ -16,6 +16,8 @@ dependencies:
   fvp: ^0.37.2 # FFmpeg-backed drop-in engine replacement for video_player
   get_thumbnail_video: ^0.7.3
   local_auth: ^2.3.0
+  pointycastle: ^4.0.0
+  flutter_secure_storage: 10.3.1
 
 dev_dependencies:
   flutter_test:
@@ -29,8 +31,5 @@ flutter:
 flutter_launcher_icons:
   android: true
   image_path: "assets/images/app_icon.png"
-  
-  # Highly recommended for modern Android devices (Android 8.0+)
-  # to prevent your icon from having awkward white/black borders:
   adaptive_icon_background: "#FFFFFF" # Background color or path to a background image
   adaptive_icon_foreground: "assets/images/app_icon.png"  

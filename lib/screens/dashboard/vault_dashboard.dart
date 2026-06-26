@@ -24,11 +24,10 @@ class VaultDashboard extends StatefulWidget {
 class _VaultDashboardState extends State<VaultDashboard>
     with WidgetsBindingObserver {
   final List<MountedContainer> _mounted = [];
-  List<Map<String, String>> _saved = [];
-  Map<String, ContainerConfig> _configs = {};
-  AppSettings _appSettings = AppSettings();
-  bool _actionInFlight = false;
-  bool _rootAvailable = false;
+  List<Map<String, String>> _saved      = [];
+  Map<String, ContainerConfig> _configs  = {};
+  AppSettings _appSettings               = AppSettings();
+  bool _actionInFlight                   = false;
 
   final Map<int, Timer> _autoCloseTimers = {};
 
@@ -72,16 +71,24 @@ class _VaultDashboardState extends State<VaultDashboard>
     if (mounted) setState(() => _appSettings = s);
   }
 
-
   // ── Auto-close ──────────────────────────────────────────────────────────
 
   void _scheduleAutoClose(MountedContainer container) {
-    final cfg = _configs[container.uri];
+    final cfg  = _configs[container.uri];
     final mins = cfg?.autoCloseMins ?? 0;
     if (mins <= 0) return;
     _autoCloseTimers[container.volId]?.cancel();
     _autoCloseTimers[container.volId] = Timer(Duration(minutes: mins), () async {
       if (!mounted) return;
+
+      // FIX (Issue #5): don't lock while a multi-step operation (paste,
+      // import) is in flight.  Re-schedule and check again after a short
+      // delay so the timer still fires once the operation completes.
+      if (vaultExplorerApi.hasActiveBatch(container.volId)) {
+        _scheduleAutoClose(container);
+        return;
+      }
+
       await vaultExplorerApi.lockContainer(container.uri);
       _onContainerLocked(container.volId);
     });
@@ -121,7 +128,8 @@ class _VaultDashboardState extends State<VaultDashboard>
       final space = await vaultExplorerApi.getSpaceInfo(container);
       if (space != null && space.length > 1 && mounted) {
         setState(() {
-          _mounted[idx] = container.copyWith(totalSpace: space[0], freeSpace: space[1]);
+          _mounted[idx] =
+              container.copyWith(totalSpace: space[0], freeSpace: space[1]);
         });
       }
     } catch (_) {}
@@ -136,12 +144,14 @@ class _VaultDashboardState extends State<VaultDashboard>
     String? rememberedPassword;
     if (uri != null) {
       final cfg = _configs[uri];
-      if (cfg?.rememberPassword == true && cfg!.hasPassword) {
-        rememberedPassword = await cfg.getPassword();
+      // FIX: removed the now-deleted synchronous `hasPassword` getter;
+      // simply try getPassword() — it returns null if nothing is stored.
+      if (cfg?.rememberPassword == true) {
+        rememberedPassword = await cfg!.getPassword();
       }
     }
 
-    final cfg = uri != null ? _configs[uri] : null;
+    final cfg         = uri != null ? _configs[uri] : null;
     final docProvider = cfg?.documentProvider ?? _appSettings.defaultDocumentProvider;
 
     try {
@@ -172,8 +182,6 @@ class _VaultDashboardState extends State<VaultDashboard>
     ).whenComplete(() => setState(() => _actionInFlight = false));
   }
 
-  // ── Long-press config sheet ─────────────────────────────────────────────
-
   void _showContainerConfig({required String uri, required String currentLabel}) {
     HapticFeedback.mediumImpact();
     final existing = _configs[uri];
@@ -192,13 +200,11 @@ class _VaultDashboardState extends State<VaultDashboard>
           if (idx != -1) _scheduleAutoClose(_mounted[idx]);
         },
         onForget: _mounted.any((m) => m.uri == uri)
-            ? null // can't remove a currently-mounted container
+            ? null
             : () => _forgetContainer(uri, currentLabel),
       ),
     );
   }
-
-  // ── Forget container (with confirm) ────────────────────────────────────
 
   Future<void> _forgetContainer(String uri, String name) async {
     final confirmed = await showDialog<bool>(
@@ -214,12 +220,8 @@ class _VaultDashboardState extends State<VaultDashboard>
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              'Remove',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.error,
-              ),
-            ),
+            child: Text('Remove',
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
         ],
       ),
@@ -231,11 +233,9 @@ class _VaultDashboardState extends State<VaultDashboard>
     _loadSaved();
   }
 
-  // ── Build ───────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final clipboard = CrossContainerClipboard.instance;
 
@@ -247,29 +247,20 @@ class _VaultDashboardState extends State<VaultDashboard>
 
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.lock_outline, size: 20, color: cs.primary),
-            const SizedBox(width: 8),
-            Text(
-              'vaultexplorer',
+        title: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.lock_outline, size: 20, color: cs.primary),
+          const SizedBox(width: 8),
+          Text('vaultexplorer',
               style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.1,
-              ),
-            ),
-          ],
-        ),
+                  fontWeight: FontWeight.w600, letterSpacing: -0.1)),
+        ]),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'App Settings',
             onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AppSettingsScreen()),
-              );
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const AppSettingsScreen()));
               _loadAppSettings();
             },
           ),
@@ -285,77 +276,68 @@ class _VaultDashboardState extends State<VaultDashboard>
               itemBuilder: (context) => [
                 PopupMenuItem(
                   value: 'mount',
-                  child: Row(
-                    children: [
-                      Icon(Icons.lock_open, size: 18, color: cs.primary),
-                      const SizedBox(width: 12),
-                      const Text('Mount container'),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Icon(Icons.lock_open, size: 18, color: cs.primary),
+                    const SizedBox(width: 12),
+                    const Text('Mount container'),
+                  ]),
                 ),
                 PopupMenuItem(
                   value: 'create',
-                  child: Row(
-                    children: [
-                      Icon(Icons.add_box_outlined, size: 18, color: cs.primary),
-                      const SizedBox(width: 12),
-                      const Text('Create container'),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Icon(Icons.add_box_outlined, size: 18, color: cs.primary),
+                    const SizedBox(width: 12),
+                    const Text('Create container'),
+                  ]),
                 ),
               ],
             ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          if (clipboard.hasItems)
-            _ClipboardStatusStrip(
-              clipboard: clipboard,
-              onClear: () => setState(() => clipboard.clear()),
-            ),
-          Expanded(
-            child: displayItems.isEmpty
-                ? EmptyState(onAdd: () => _showUnlockSheet())
-                : ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: displayItems.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) {
-                      final item = displayItems[i];
-
-                      if (item is MountedContainer) {
-                        return ContainerCard(
-                          container: item,
-                          onLocked: _onContainerLocked,
-                          onReturn: () => _refreshContainerSpace(item.volId),
-                          onLongPress: () => _showContainerConfig(
-                            uri: item.uri,
-                            currentLabel: item.displayName,
-                          ),
-                        );
-                      } else {
-                        final uri = item['uri'] as String;
-                        final name = item['name'] as String;
-                        final cfg = _configs[uri];
-                        final label = cfg?.label.isNotEmpty == true ? cfg!.label : name;
-                        return SavedContainerCard(
-                          name: label,
-                          uri: uri,
-                          onUnlock: () => _showUnlockSheet(uri: uri, name: name),
-                          onLongPress: () => _showContainerConfig(
-                            uri: uri,
-                            currentLabel: label,
-                          ),
-                          onForget: () => _forgetContainer(uri, label),
-                        );
-                      }
-                    },
-                  ),
+      body: Column(children: [
+        if (clipboard.hasItems)
+          _ClipboardStatusStrip(
+            clipboard: clipboard,
+            onClear: () => setState(() => clipboard.clear()),
           ),
-        ],
-      ),
+        Expanded(
+          child: displayItems.isEmpty
+              ? EmptyState(onAdd: () => _showUnlockSheet())
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: displayItems.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final item = displayItems[i];
+                    if (item is MountedContainer) {
+                      return ContainerCard(
+                        container: item,
+                        onLocked: _onContainerLocked,
+                        onReturn: () => _refreshContainerSpace(item.volId),
+                        onLongPress: () => _showContainerConfig(
+                          uri: item.uri,
+                          currentLabel: item.displayName,
+                        ),
+                      );
+                    } else {
+                      final uri   = item['uri'] as String;
+                      final name  = item['name'] as String;
+                      final cfg   = _configs[uri];
+                      final label = cfg?.label.isNotEmpty == true ? cfg!.label : name;
+                      return SavedContainerCard(
+                        name: label,
+                        uri: uri,
+                        onUnlock: () => _showUnlockSheet(uri: uri, name: name),
+                        onLongPress: () =>
+                            _showContainerConfig(uri: uri, currentLabel: label),
+                        onForget: () => _forgetContainer(uri, label),
+                      );
+                    }
+                  },
+                ),
+        ),
+      ]),
     );
   }
 }
@@ -369,54 +351,42 @@ class _ClipboardStatusStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return Container(
       color: cs.primaryContainer,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Icon(
-            clipboard.isCutOperation ? Icons.cut : Icons.copy,
-            size: 18,
-            color: cs.onPrimaryContainer,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  clipboard.summary,
+      child: Row(children: [
+        Icon(clipboard.isCutOperation ? Icons.cut : Icons.copy,
+            size: 18, color: cs.onPrimaryContainer),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(clipboard.summary,
                   style: textTheme.labelLarge?.copyWith(
-                    color: cs.onPrimaryContainer,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Open a container and tap "Paste Here"',
+                      color: cs.onPrimaryContainer, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text('Open a container and tap "Paste Here"',
                   style: textTheme.bodySmall?.copyWith(
-                    color: cs.onPrimaryContainer.withOpacity(0.8),
-                  ),
-                ),
-              ],
-            ),
+                      color: cs.onPrimaryContainer.withOpacity(0.8))),
+            ],
           ),
-          TextButton(
-            onPressed: onClear,
-            style: TextButton.styleFrom(
-              foregroundColor: cs.onPrimaryContainer,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: onClear,
+          style: TextButton.styleFrom(
+            foregroundColor: cs.onPrimaryContainer,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-        ],
-      ),
+          child: const Text('Cancel'),
+        ),
+      ]),
     );
   }
 }

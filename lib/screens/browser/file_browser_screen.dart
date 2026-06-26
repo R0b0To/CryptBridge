@@ -18,7 +18,7 @@ import 'widgets/file_grid_view.dart';
 import 'widgets/file_list_view.dart';
 import 'widgets/selection_app_bar.dart';
 
-// ── Conflict resolution ────────────────────────────────────────────────────────
+// ── Conflict resolution ───────────────────────────────────────────────────────
 
 enum _ConflictResolution { skip, overwrite, keepBoth }
 typedef _ConflictResult = ({_ConflictResolution resolution, bool applyToAll});
@@ -54,39 +54,30 @@ class FileBrowserScreen extends StatefulWidget {
 class _FileBrowserScreenState extends State<FileBrowserScreen>
     with SelectionMixin<FileBrowserScreen>, SortMixin<FileBrowserScreen> {
 
-  // ── Core state ────────────────────────────────────────────────────────────
   final List<PathSegment> _pathStack = [const PathSegment('Root', '')];
   List<String> _currentItems = [];
   bool _isLoading = false;
-  int _freeSpace = 0;
+  int _freeSpace  = 0;
 
-  // ── Inline status (replaces SnackBars for operation feedback) ─────────────
   String? _statusMessage;
   bool _statusIsError = false;
 
-  // ── Unified clipboard ─────────────────────────────────────────────────────
   CrossContainerClipboard get _clip => CrossContainerClipboard.instance;
 
-  // ── Search state ──────────────────────────────────────────────────────────
   bool _isSearchActive = false;
-  String _searchQuery = '';
+  String _searchQuery  = '';
   final _searchController = TextEditingController();
 
-  // ── Layout state ──────────────────────────────────────────────────────────
   BrowserLayoutMode _layoutMode = BrowserLayoutMode.list;
+  String? _currentFilter;
 
-  // ── Filter state ──────────────────────────────────────────────────────────
-  String? _currentFilter; // 'image', 'video', 'audio', 'document' or null (all)
+  static const _imageExts    = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
+  static const _videoExts    = {'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv'};
+  static const _audioExts    = {'mp3', 'm4a', 'wav', 'flac', 'ogg', 'aac'};
 
-  static const _imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
-  static const _videoExts = {'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv'};
-  static const _audioExts = {'mp3', 'm4a', 'wav', 'flac', 'ogg', 'aac'};
-
-  // ── Convenience getters ───────────────────────────────────────────────────
-  bool get _atRoot => _pathStack.length == 1;
+  bool get _atRoot        => _pathStack.length == 1;
   String get _currentDirPath => _pathStack.last.fatPath;
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -104,17 +95,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   void _setStatus(String msg, {bool error = false, Duration? autoClear}) {
     if (!mounted) return;
-    setState(() {
-      _statusMessage = msg;
-      _statusIsError = error;
-    });
+    setState(() { _statusMessage = msg; _statusIsError = error; });
     final delay = autoClear ?? (error
         ? const Duration(seconds: 5)
         : const Duration(seconds: 3));
     Future.delayed(delay, () {
-      if (mounted && _statusMessage == msg) {
-        setState(() => _statusMessage = null);
-      }
+      if (mounted && _statusMessage == msg) setState(() => _statusMessage = null);
     });
   }
 
@@ -127,8 +113,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   Future<void> _loadDirectoryContents(String path) async {
     setState(() => _isLoading = true);
     try {
-      final items =
-          await vaultExplorerApi.listDirectory(widget.container, path);
+      final items = await vaultExplorerApi.listDirectory(widget.container, path);
       final space = await vaultExplorerApi.getSpaceInfo(widget.container);
       if (mounted) {
         setState(() {
@@ -156,13 +141,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   // ── Navigation ────────────────────────────────────────────────────────────
 
   void _enterDirectory(String rawDirEntry) {
-    final name = rawDirEntry.replaceFirst('[DIR] ', '');
-    final newPath =
-        _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
+    final name    = rawDirEntry.replaceFirst('[DIR] ', '');
+    final newPath = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
     setState(() {
       _pathStack.add(PathSegment(name, newPath));
       _clearSearch();
-      _currentFilter = null; // Reset filters on navigation
+      _currentFilter = null;
     });
     _loadDirectoryContents(newPath);
   }
@@ -198,12 +182,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   void _handleFileTap(String rawItem) {
-    if (isSelectionMode) {
-      toggleSelectItem(rawItem);
-      return;
-    }
+    if (isSelectionMode) { toggleSelectItem(rawItem); return; }
     final cleanName = rawItem.split('|').first;
-    final fullPath =
+    final fullPath  =
         _currentDirPath.isEmpty ? cleanName : '$_currentDirPath/$cleanName';
 
     if (_isSupportedMedia(cleanName)) {
@@ -215,17 +196,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       final resolvedPaths = mediaEntries
           .map((f) => _currentDirPath.isEmpty ? f : '$_currentDirPath/$f')
           .toList();
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MediaViewerScreen(
-            container: widget.container,
-            mediaFiles: resolvedPaths,
-            initialIndex: mediaEntries.indexOf(cleanName),
-            startingFolder: _currentDirPath,
-          ),
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => MediaViewerScreen(
+          container: widget.container,
+          mediaFiles: resolvedPaths,
+          initialIndex: mediaEntries.indexOf(cleanName),
+          startingFolder: _currentDirPath,
         ),
-      );
+      ));
     } else {
       _openFileWithApp(cleanName, fullPath);
     }
@@ -242,60 +220,49 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       final resolvedPaths = localMedia
           .map((f) => _currentDirPath.isEmpty ? f : '$_currentDirPath/$f')
           .toList();
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MediaViewerScreen(
-            container: widget.container,
-            mediaFiles: resolvedPaths,
-            initialIndex: 0,
-            startingFolder: _currentDirPath,
-          ),
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => MediaViewerScreen(
+          container: widget.container,
+          mediaFiles: resolvedPaths,
+          initialIndex: 0,
+          startingFolder: _currentDirPath,
         ),
-      );
+      ));
       return;
     }
 
     setState(() => _isLoading = true);
-    _setStatus('Scanning subfolders for media…', autoClear: const Duration(seconds: 15));
+    _setStatus('Scanning subfolders for media…',
+        autoClear: const Duration(seconds: 15));
 
     try {
       final recursiveMedia = await _scanMediaRecursively(_currentDirPath);
       if (!mounted) return;
-
       if (recursiveMedia.isNotEmpty) {
         _clearStatus();
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => MediaViewerScreen(
-              container: widget.container,
-              mediaFiles: recursiveMedia,
-              initialIndex: 0,
-              startingFolder: _currentDirPath,
-            ),
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => MediaViewerScreen(
+            container: widget.container,
+            mediaFiles: recursiveMedia,
+            initialIndex: 0,
+            startingFolder: _currentDirPath,
           ),
-        );
+        ));
       } else {
-        _setStatus('No media files found in this folder or its subfolders', error: true);
+        _setStatus('No media files found in this folder or its subfolders',
+            error: true);
       }
     } catch (e) {
       _setStatus('Failed to scan subfolders: $e', error: true);
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _handleItemLongPress(String rawItem) {
     HapticFeedback.selectionClick();
     if (!isSelectionMode) {
-      setState(() {
-        isSelectionMode = true;
-        selectedItems.add(rawItem);
-      });
+      setState(() { isSelectionMode = true; selectedItems.add(rawItem); });
     } else {
       toggleSelectItem(rawItem);
     }
@@ -305,27 +272,38 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   bool _isSupportedMedia(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
-    return _imageExts.contains(ext) || _videoExts.contains(ext) || _audioExts.contains(ext);
+    return _imageExts.contains(ext) ||
+        _videoExts.contains(ext) ||
+        _audioExts.contains(ext);
   }
 
+
   Future<List<String>> _scanMediaRecursively(String dirPath) async {
-    final foundFiles = <String>[];
+    final foundFiles  = <String>[];
+    final subdirNames = <String>[];
     try {
-      final items = await vaultExplorerApi.listDirectory(widget.container, dirPath);
+      final items =
+          await vaultExplorerApi.listDirectory(widget.container, dirPath);
       if (items != null) {
         for (final item in items) {
           if (item.startsWith('System:')) continue;
           if (item.startsWith('[DIR] ')) {
-            final subDirName = item.replaceFirst('[DIR] ', '');
-            final subDirPath = dirPath.isEmpty ? subDirName : '$dirPath/$subDirName';
-            final nested = await _scanMediaRecursively(subDirPath);
-            foundFiles.addAll(nested);
+            subdirNames.add(item.replaceFirst('[DIR] ', ''));
           } else {
             final fileName = item.split('|').first;
             if (_isSupportedMedia(fileName)) {
-              final fullPath = dirPath.isEmpty ? fileName : '$dirPath/$fileName';
-              foundFiles.add(fullPath);
+              foundFiles
+                  .add(dirPath.isEmpty ? fileName : '$dirPath/$fileName');
             }
+          }
+        }
+        if (subdirNames.isNotEmpty) {
+          final nested = await Future.wait(subdirNames.map((name) {
+            final subPath = dirPath.isEmpty ? name : '$dirPath/$name';
+            return _scanMediaRecursively(subPath);
+          }));
+          for (final list in nested) {
+            foundFiles.addAll(list);
           }
         }
       }
@@ -337,15 +315,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Future<void> _openFileWithApp(String cleanName, String fullPath) async {
     try {
-      final ok =
-          await vaultExplorerApi.openWithApp(widget.container, fullPath);
-      if (!ok && mounted) {
-        _setStatus('No app found for this file type', error: true);
-      }
+      final ok = await vaultExplorerApi.openWithApp(widget.container, fullPath);
+      if (!ok && mounted) _setStatus('No app found for this file type', error: true);
     } catch (_) {
-      if (mounted) {
-        _setStatus('Could not open "$cleanName"', error: true);
-      }
+      if (mounted) _setStatus('Could not open "$cleanName"', error: true);
     }
   }
 
@@ -353,11 +326,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   void _initClipboard({required bool cut}) {
     final sources = selectedItems.map((item) {
-      final isDir = item.startsWith('[DIR] ');
-      final name =
-          isDir ? item.replaceFirst('[DIR] ', '') : item.split('|').first;
-      final path =
-          _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
+      final isDir  = item.startsWith('[DIR] ');
+      final name   = isDir ? item.replaceFirst('[DIR] ', '') : item.split('|').first;
+      final path   = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
       int? size;
       if (!isDir) {
         final parts = item.split('|');
@@ -365,13 +336,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       }
       return <String, dynamic>{'path': path, 'isDir': isDir, 'size': size};
     }).toList();
-
-    _clip.set(
-      container: widget.container,
-      cut: cut,
-      clipItems: sources,
-    );
-
+    _clip.set(container: widget.container, cut: cut, clipItems: sources);
     exitSelectionMode();
   }
 
@@ -379,7 +344,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Future<int> _measureTreeBytes(
       MountedContainer container, String path) async {
-    int total = 0;
+    int total  = 0;
     final entries =
         await vaultExplorerApi.listDirectory(container, path) ?? [];
     for (final entry in entries) {
@@ -410,19 +375,34 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   Future<void> _paste() async {
     if (!_clip.hasItems) return;
 
-    final srcContainer = _clip.sourceContainer!;
-    final items = List<Map<String, dynamic>>.from(_clip.items);
-    final isCut = _clip.isCutOperation;
+    final srcContainer  = _clip.sourceContainer!;
+    final items         = List<Map<String, dynamic>>.from(_clip.items);
+    final isCut         = _clip.isCutOperation;
     final sameContainer = _clip.isFromContainer(widget.container);
 
-    final toProcess = <Map<String, dynamic>>[];
-    int skipCount = 0;
+    if (!sameContainer) {
+      final srcStillMounted = await _isContainerMounted(srcContainer);
+      if (!srcStillMounted) {
+        _setStatus(
+          'Source container "${srcContainer.displayName}" is no longer mounted — paste cancelled',
+          error: true,
+          autoClear: const Duration(seconds: 6),
+        );
+        _clip.clear();
+        setState(() {});
+        return;
+      }
+    }
+
+    final toProcess  = <Map<String, dynamic>>[];
+    int skipCount    = 0;
     for (final item in items) {
-      final srcPath = item['path'] as String;
-      final isDir = item['isDir'] as bool;
+      final srcPath  = item['path'] as String;
+      final isDir    = item['isDir'] as bool;
       final fileName = srcPath.split('/').last;
-      final destPath =
-          _currentDirPath.isEmpty ? fileName : '$_currentDirPath/$fileName';
+      final destPath = _currentDirPath.isEmpty
+          ? fileName
+          : '$_currentDirPath/$fileName';
       if (sameContainer) {
         if (srcPath == destPath) { skipCount++; continue; }
         if (isDir && destPath.startsWith('$srcPath/')) { skipCount++; continue; }
@@ -437,7 +417,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     }
 
     setState(() => _isLoading = true);
-    _setStatus('Checking available space…', autoClear: const Duration(minutes: 5));
+    _setStatus('Checking available space…',
+        autoClear: const Duration(minutes: 5));
+
+    vaultExplorerApi.beginBatch(widget.container.volId);
+    if (!sameContainer) vaultExplorerApi.beginBatch(srcContainer.volId);
 
     if (!(sameContainer && isCut)) {
       int requiredBytes = 0;
@@ -445,10 +429,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         requiredBytes += await _measureItemBytes(srcContainer, item);
       }
       final spaceInfo = await vaultExplorerApi.getSpaceInfo(widget.container);
-      final freeBytes =
-          (spaceInfo != null && spaceInfo.length > 1) ? spaceInfo[1] : 0;
+      final freeBytes = (spaceInfo != null && spaceInfo.length > 1)
+          ? spaceInfo[1]
+          : 0;
       if (requiredBytes > (freeBytes * 0.95).floor()) {
         setState(() => _isLoading = false);
+        vaultExplorerApi.endBatch(widget.container.volId);
+        if (!sameContainer) vaultExplorerApi.endBatch(srcContainer.volId);
         _setStatus(
           'Not enough space — need ${formatBytes(requiredBytes)}, '
           'only ${formatBytes(freeBytes)} free',
@@ -460,10 +447,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     }
 
     final existingRaw = await vaultExplorerApi.listDirectory(
-            widget.container, _currentDirPath) ??
-        [];
+            widget.container, _currentDirPath) ?? [];
     final existingNames = <String>{};
-    final existingDirs = <String>{};
+    final existingDirs  = <String>{};
     for (final item in existingRaw) {
       if (item.startsWith('[DIR] ')) {
         final n = item.replaceFirst('[DIR] ', '').toLowerCase();
@@ -480,21 +466,18 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     final List<String> createdDestPaths = [];
     bool diskFull = false;
 
-    _setStatus(
-      isCut ? 'Moving…' : 'Copying…',
-      autoClear: const Duration(minutes: 10),
-    );
+    _setStatus(isCut ? 'Moving…' : 'Copying…',
+        autoClear: const Duration(minutes: 10));
 
     try {
       for (final item in toProcess) {
         if (!mounted) break;
 
-        final srcPath = item['path'] as String;
-        final isDir = item['isDir'] as bool;
+        final srcPath  = item['path'] as String;
+        final isDir    = item['isDir'] as bool;
         final fileName = srcPath.split('/').last;
         String destPath = item['_destPath'] as String;
 
-        // ── Conflict resolution ─────────────────────────────────────────
         if (existingNames.contains(fileName.toLowerCase())) {
           _ConflictResolution? resolution = globalResolution;
           if (resolution == null) {
@@ -519,7 +502,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                     widget.container, destPath, destIsDir);
               }
             case _ConflictResolution.keepBoth:
-              final uniqueName = _makeUniqueName(fileName, existingNames);
+              final uniqueName = makeUniqueName(fileName, existingNames);
               existingNames.add(uniqueName.toLowerCase());
               destPath = _currentDirPath.isEmpty
                   ? uniqueName
@@ -527,7 +510,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           }
         }
 
-        // ── Execute ─────────────────────────────────────────────────────
         try {
           if (sameContainer && isCut) {
             final ok = await vaultExplorerApi.renameFile(
@@ -558,6 +540,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         }
       }
     } finally {
+      vaultExplorerApi.endBatch(widget.container.volId);
+      if (!sameContainer) vaultExplorerApi.endBatch(srcContainer.volId);
+
       if (diskFull) {
         for (final path in createdDestPaths.reversed) {
           try {
@@ -582,22 +567,29 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
             if (skipCount > 0) '$skipCount skipped',
             if (failCount > 0) '$failCount failed',
           ];
-          _setStatus(
-            parts.join(' · '),
-            error: failCount > 0,
-          );
+          _setStatus(parts.join(' · '), error: failCount > 0);
         }
       }
     }
   }
 
+  Future<bool> _isContainerMounted(MountedContainer container) async {
+    try {
+      final space = await vaultExplorerApi.getSpaceInfo(container);
+      return space != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ── Conflict helpers ──────────────────────────────────────────────────────
 
-  static String _makeUniqueName(String fileName, Set<String> existingNames) {
+  /// Returns a name not present in [existingNames] (case-insensitive).
+  static String makeUniqueName(String fileName, Set<String> existingNames) {
     if (!existingNames.contains(fileName.toLowerCase())) return fileName;
     final dotIdx = fileName.lastIndexOf('.');
-    final name = dotIdx != -1 ? fileName.substring(0, dotIdx) : fileName;
-    final ext = dotIdx != -1 ? fileName.substring(dotIdx) : '';
+    final name   = dotIdx != -1 ? fileName.substring(0, dotIdx) : fileName;
+    final ext    = dotIdx != -1 ? fileName.substring(dotIdx) : '';
     for (int i = 1; i < 9999; i++) {
       final candidate = '$name ($i)$ext';
       if (!existingNames.contains(candidate.toLowerCase())) return candidate;
@@ -628,11 +620,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                   children: [
                     TextSpan(
                       text: '"$fileName"',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, color: cs.primary),
+                      style: TextStyle(fontWeight: FontWeight.w600,
+                          color: cs.primary),
                     ),
-                    const TextSpan(
-                        text: ' already exists in this location.'),
+                    const TextSpan(text: ' already exists in this location.'),
                   ],
                 ),
               ),
@@ -640,21 +631,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                 const SizedBox(height: 14),
                 GestureDetector(
                   onTap: () => setLocal(() => applyToAll = !applyToAll),
-                  child: Row(
-                    children: [
-                      Checkbox(
-                        value: applyToAll,
-                        onChanged: (v) =>
-                            setLocal(() => applyToAll = v ?? false),
-                        materialTapTargetSize:
-                            MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text('Apply to all conflicts'),
-                      ),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Checkbox(
+                      value: applyToAll,
+                      onChanged: (v) =>
+                          setLocal(() => applyToAll = v ?? false),
+                      materialTapTargetSize:
+                          MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(child: Text('Apply to all conflicts')),
+                  ]),
                 ),
               ],
             ],
@@ -662,17 +649,21 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx,
-                  (resolution: _ConflictResolution.skip, applyToAll: applyToAll)),
+                  (resolution: _ConflictResolution.skip,
+                   applyToAll: applyToAll)),
               child: const Text('Skip'),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx,
-                  (resolution: _ConflictResolution.overwrite, applyToAll: applyToAll)),
-              child: Text('Overwrite', style: TextStyle(color: cs.error)),
+                  (resolution: _ConflictResolution.overwrite,
+                   applyToAll: applyToAll)),
+              child: Text('Overwrite',
+                  style: TextStyle(color: cs.error)),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx,
-                  (resolution: _ConflictResolution.keepBoth, applyToAll: applyToAll)),
+                  (resolution: _ConflictResolution.keepBoth,
+                   applyToAll: applyToAll)),
               child: const Text('Keep Both'),
             ),
           ],
@@ -691,10 +682,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     for (final entry in children) {
       if (entry.startsWith('System:')) continue;
       final childIsDir = entry.startsWith('[DIR] ');
-      final childName = childIsDir
+      final childName  = childIsDir
           ? entry.replaceFirst('[DIR] ', '')
           : entry.split('|').first;
-      await _deleteEntryRecursive(container, '$path/$childName', childIsDir);
+      await _deleteEntryRecursive(
+          container, '$path/$childName', childIsDir);
     }
     return vaultExplorerApi.deleteFile(container, path);
   }
@@ -732,7 +724,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     for (final entry in children) {
       if (entry.startsWith('System:')) continue;
       final childIsDir = entry.startsWith('[DIR] ');
-      final childName = childIsDir
+      final childName  = childIsDir
           ? entry.replaceFirst('[DIR] ', '')
           : entry.split('|').first;
       final ok = await _copyEntryWithinContainer(
@@ -782,7 +774,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     for (final entry in children) {
       if (entry.startsWith('System:')) continue;
       final childIsDir = entry.startsWith('[DIR] ');
-      final childName = childIsDir
+      final childName  = childIsDir
           ? entry.replaceFirst('[DIR] ', '')
           : entry.split('|').first;
       final ok = await _copyEntryAcrossContainers(
@@ -812,10 +804,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         try {
           for (final item in items) {
             final isDir = item.startsWith('[DIR] ');
-            final name = isDir
+            final name  = isDir
                 ? item.replaceFirst('[DIR] ', '')
                 : item.split('|').first;
-            final full =
+            final full  =
                 _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
             if (!await _deleteEntryRecursive(widget.container, full, isDir)) {
               failCount++;
@@ -841,18 +833,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   Future<void> _exportSelectedToStorage() async {
     final items = selectedItems.map((item) {
       final isDir = item.startsWith('[DIR] ');
-      final name =
-          isDir ? item.replaceFirst('[DIR] ', '') : item.split('|').first;
-      final path =
-          _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
+      final name  = isDir ? item.replaceFirst('[DIR] ', '') : item.split('|').first;
+      final path  = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
       return <String, dynamic>{'path': path, 'isDir': isDir};
     }).toList();
     if (items.isEmpty) return;
 
     setState(() => _isLoading = true);
     try {
-      final count =
-          await vaultExplorerApi.exportSelectedToFolder(widget.container, items);
+      final count = await vaultExplorerApi.exportSelectedToFolder(
+          widget.container, items);
       _setStatus(count > 0
           ? 'Exported $count file(s)'
           : 'Export cancelled or failed',
@@ -868,8 +858,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   Future<void> _importFilesFromDevice() async {
     setState(() => _isLoading = true);
     try {
-      final count =
-          await vaultExplorerApi.importFiles(widget.container, _currentDirPath);
+      final count = await vaultExplorerApi.importFiles(
+          widget.container, _currentDirPath);
       if (count > 0) await _loadDirectoryContents(_currentDirPath);
       _setStatus(count > 0
           ? 'Imported $count file${count != 1 ? 's' : ''}'
@@ -885,8 +875,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   Future<void> _importFolderFromDevice() async {
     setState(() => _isLoading = true);
     try {
-      final count =
-          await vaultExplorerApi.importFolder(widget.container, _currentDirPath);
+      final count = await vaultExplorerApi.importFolder(
+          widget.container, _currentDirPath);
       if (count > 0) await _loadDirectoryContents(_currentDirPath);
       _setStatus(count > 0
           ? 'Imported $count item${count != 1 ? 's' : ''}'
@@ -899,46 +889,40 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     }
   }
 
-  // ── Filter conditions (NEW FEATURE) ──────────────────────────────────────────
+  // ── Filter helpers ────────────────────────────────────────────────────────
 
   bool _matchesFilter(String fileName) {
     if (_currentFilter == null) return true;
     final ext = fileName.split('.').last.toLowerCase();
     switch (_currentFilter) {
-      case 'image':
-        return _imageExts.contains(ext);
-      case 'video':
-        return _videoExts.contains(ext);
-      case 'audio':
-        return _audioExts.contains(ext);
-      case 'document':
-        return const {
-          'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf', 'csv', 'zip', 'tar', 'gz', 'json', 'xml'
-        }.contains(ext);
-      default:
-        return true;
+      case 'image':    return _imageExts.contains(ext);
+      case 'video':    return _videoExts.contains(ext);
+      case 'audio':    return _audioExts.contains(ext);
+      case 'document': return const {
+        'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+        'txt', 'rtf', 'csv', 'zip', 'tar', 'gz', 'json', 'xml'
+      }.contains(ext);
+      default:         return true;
     }
   }
 
-  // ── Submenu Sort Option Builder ──────────────────────────────────────────────
-
-  Widget _buildSortMenuButton(SortBy value, String label, ColorScheme cs, TextTheme textTheme) {
+  Widget _buildSortMenuButton(
+      SortBy value, String label, ColorScheme cs, TextTheme textTheme) {
     final isActive = sortBy == value;
     return MenuItemButton(
       onPressed: () => setSort(value),
       leadingIcon: Icon(
         isActive
-            ? (sortAscending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded)
+            ? (sortAscending
+                ? Icons.arrow_upward_rounded
+                : Icons.arrow_downward_rounded)
             : Icons.sort_rounded,
         size: 16,
         color: isActive ? cs.primary : cs.onSurfaceVariant,
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontWeight: isActive ? FontWeight.w700 : FontWeight.normal,
-        ),
-      ),
+      child: Text(label,
+          style: TextStyle(
+              fontWeight: isActive ? FontWeight.w700 : FontWeight.normal)),
     );
   }
 
@@ -955,18 +939,19 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
     final query = _searchQuery.trim().toLowerCase();
 
-    // Hide folders when viewing specialized file filters to create a cleaner view (All Files is unaffected)
     final filteredDirs = query.isEmpty && _currentFilter == null
         ? dirs
         : (query.isEmpty
             ? <String>[]
             : dirs
-                .where((d) => d.replaceFirst('[DIR] ', '').toLowerCase().contains(query))
+                .where((d) =>
+                    d.replaceFirst('[DIR] ', '').toLowerCase().contains(query))
                 .toList());
 
     final filteredFiles = files.where((f) {
       final cleanName = f.split('|').first;
-      if (query.isNotEmpty && !cleanName.toLowerCase().contains(query)) return false;
+      if (query.isNotEmpty && !cleanName.toLowerCase().contains(query))
+        return false;
       return _matchesFilter(cleanName);
     }).toList();
 
@@ -989,29 +974,28 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       },
       child: Scaffold(
         appBar: _buildAppBar(context, filteredDirs, filteredFiles),
-        body: Column(
-          children: [
-            BreadcrumbBar(stack: _pathStack, onTap: _jumpTo),
-            _StatsBar(
-              dirCount: filteredDirs.length,
-              fileCount: filteredFiles.length,
-              freeSpaceBytes: _freeSpace,
-              isFiltered: query.isNotEmpty || _currentFilter != null,
+        body: Column(children: [
+          BreadcrumbBar(stack: _pathStack, onTap: _jumpTo),
+          _StatsBar(
+            dirCount: filteredDirs.length,
+            fileCount: filteredFiles.length,
+            freeSpaceBytes: _freeSpace,
+            isFiltered: query.isNotEmpty || _currentFilter != null,
+          ),
+          _FilterChipsBar(
+            currentFilter: _currentFilter,
+            onFilterChanged: (filter) =>
+                setState(() => _currentFilter = filter),
+          ),
+          const Divider(),
+          Expanded(child: _buildBody(filteredDirs, filteredFiles)),
+          if (_statusMessage != null)
+            _StatusBar(
+              message: _statusMessage!,
+              isError: _statusIsError,
+              onDismiss: _clearStatus,
             ),
-            _FilterChipsBar(
-              currentFilter: _currentFilter,
-              onFilterChanged: (filter) => setState(() => _currentFilter = filter),
-            ),
-            const Divider(),
-            Expanded(child: _buildBody(filteredDirs, filteredFiles)),
-            if (_statusMessage != null)
-              _StatusBar(
-                message: _statusMessage!,
-                isError: _statusIsError,
-                onDismiss: _clearStatus,
-              ),
-          ],
-        ),
+        ]),
       ),
     );
   }
@@ -1020,43 +1004,41 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   PreferredSizeWidget _buildAppBar(
       BuildContext context, List<String> dirs, List<String> files) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final allSelectable = [...dirs, ...files];
 
     if (isSelectionMode) {
-      final single = selectedItems.length == 1;
+      final single     = selectedItems.length == 1;
       final singleFile = single && !selectedItems.first.startsWith('[DIR] ');
       return SelectionAppBar(
         selectedCount: selectedItems.length,
         singleSelected: single,
         singleFileSelected: singleFile,
         onClose: exitSelectionMode,
-        onSelectAll: () => setState(() => selectedItems.addAll(allSelectable)),
+        onSelectAll: () =>
+            setState(() => selectedItems.addAll(allSelectable)),
         onRename: () {
-          final raw = selectedItems.first;
+          final raw   = selectedItems.first;
           final isDir = raw.startsWith('[DIR] ');
-          final name = isDir
+          final name  = isDir
               ? raw.replaceFirst('[DIR] ', '')
               : raw.split('|').first;
-          BrowserDialogs.showRename(
-            context,
-            container: widget.container,
-            oldName: name,
-            currentDirPath: _currentDirPath,
-            onSuccess: () => _loadDirectoryContents(_currentDirPath),
-          );
+          BrowserDialogs.showRename(context,
+              container: widget.container,
+              oldName: name,
+              currentDirPath: _currentDirPath,
+              onSuccess: () => _loadDirectoryContents(_currentDirPath));
           exitSelectionMode();
         },
         onCopy: () => _initClipboard(cut: false),
-        onCut: () => _initClipboard(cut: true),
+        onCut:  () => _initClipboard(cut: true),
         onExport: _exportSelectedToStorage,
         onDelete: _batchDelete,
         onOpenWithApp: () {
-          final raw = selectedItems.first;
+          final raw  = selectedItems.first;
           final name = raw.split('|').first;
-          final path =
-              _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
+          final path = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
           vaultExplorerApi.openWithApp(widget.container, path);
           exitSelectionMode();
         },
@@ -1068,7 +1050,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       return ClipboardAppBar(
         isCutOperation: _clip.isCutOperation,
         itemCount: _clip.items.length,
-        sourceLabel: fromHere ? null : _clip.sourceContainer?.displayName,
+        sourceLabel:
+            fromHere ? null : _clip.sourceContainer?.displayName,
         onCancel: () => setState(() => _clip.clear()),
         onPaste: _paste,
         onBack: _atRoot
@@ -1119,15 +1102,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       leading: IconButton(
         icon: const Icon(Icons.arrow_back),
         tooltip: _atRoot ? 'Back to dashboard' : 'Go up',
-        onPressed:
-            _atRoot ? () => Navigator.of(context).pop() : _navigateUp,
+        onPressed: _atRoot ? () => Navigator.of(context).pop() : _navigateUp,
       ),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.container.displayName),
-        ],
-      ),
+      title: Text(widget.container.displayName),
       actions: [
         IconButton(
           icon: const Icon(Icons.search),
@@ -1140,19 +1117,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           onSelected: (v) {
             switch (v) {
               case 'folder':
-                BrowserDialogs.showCreateFolder(
-                  context,
-                  container: widget.container,
-                  currentDirPath: _currentDirPath,
-                  onSuccess: () => _loadDirectoryContents(_currentDirPath),
-                );
+                BrowserDialogs.showCreateFolder(context,
+                    container: widget.container,
+                    currentDirPath: _currentDirPath,
+                    onSuccess: () => _loadDirectoryContents(_currentDirPath));
               case 'file':
-                BrowserDialogs.showCreateFile(
-                  context,
-                  container: widget.container,
-                  currentDirPath: _currentDirPath,
-                  onSuccess: () => _loadDirectoryContents(_currentDirPath),
-                );
+                BrowserDialogs.showCreateFile(context,
+                    container: widget.container,
+                    currentDirPath: _currentDirPath,
+                    onSuccess: () => _loadDirectoryContents(_currentDirPath));
               case 'import':
                 _importFilesFromDevice();
               case 'import_folder':
@@ -1160,101 +1133,77 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
             }
           },
           itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'folder',
+            PopupMenuItem(value: 'folder',
               child: Row(children: [
                 Icon(Icons.create_new_folder_outlined,
                     color: cs.onSurfaceVariant),
                 const SizedBox(width: 12),
                 const Text('New Folder'),
-              ]),
-            ),
-            PopupMenuItem(
-              value: 'file',
+              ])),
+            PopupMenuItem(value: 'file',
               child: Row(children: [
                 Icon(Icons.insert_drive_file_outlined,
                     color: cs.onSurfaceVariant),
                 const SizedBox(width: 12),
                 const Text('New File'),
-              ]),
-            ),
+              ])),
             const PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'import',
+            PopupMenuItem(value: 'import',
               child: Row(children: [
-                Icon(Icons.upload_file_outlined, color: cs.onSurfaceVariant),
+                Icon(Icons.upload_file_outlined,
+                    color: cs.onSurfaceVariant),
                 const SizedBox(width: 12),
                 const Text('Import Files'),
-              ]),
-            ),
-            PopupMenuItem(
-              value: 'import_folder',
+              ])),
+            PopupMenuItem(value: 'import_folder',
               child: Row(children: [
                 Icon(Icons.drive_folder_upload_outlined,
                     color: cs.onSurfaceVariant),
                 const SizedBox(width: 12),
                 const Text('Import Folder'),
-              ]),
-            ),
+              ])),
           ],
         ),
-        // Unified cascading menu anchor replacing basic popup menu buttons
         MenuAnchor(
-          builder: (ctx, controller, child) {
-            return IconButton(
-              onPressed: () {
-                if (controller.isOpen) {
-                  controller.close();
-                } else {
-                  controller.open();
-                }
-              },
-              icon: const Icon(Icons.more_vert_rounded),
-              tooltip: 'Folder options',
-            );
-          },
+          builder: (ctx, controller, child) => IconButton(
+            onPressed: () =>
+                controller.isOpen ? controller.close() : controller.open(),
+            icon: const Icon(Icons.more_vert_rounded),
+            tooltip: 'Folder options',
+          ),
           menuChildren: [
             MenuItemButton(
               onPressed: () {
                 final hasLocalMedia = _currentItems
-                    .where((f) => !f.startsWith('[DIR]') && !f.startsWith('System:'))
+                    .where((f) => !f.startsWith('[DIR]') &&
+                        !f.startsWith('System:'))
                     .map((f) => f.split('|').first)
-                    .where(_isSupportedMedia)
-                    .isNotEmpty;
-                final hasSubfolders = _currentItems.any((f) => f.startsWith('[DIR] '));
-                final canPlay = hasLocalMedia || hasSubfolders;
-                if (canPlay) {
+                    .any(_isSupportedMedia);
+                final hasSubfolders =
+                    _currentItems.any((f) => f.startsWith('[DIR] '));
+                if (hasLocalMedia || hasSubfolders) {
                   _startMediaViewerFromCurrentLocation();
                 }
               },
-              leadingIcon: Icon(
-                Icons.play_circle_outline_rounded,
-                color: cs.primary,
-              ),
+              leadingIcon:
+                  Icon(Icons.play_circle_outline_rounded, color: cs.primary),
               child: const Text('Play Media Here'),
             ),
             const PopupMenuDivider(),
             MenuItemButton(
-              onPressed: () {
-                setState(() {
-                  _layoutMode = _layoutMode == BrowserLayoutMode.list
-                      ? BrowserLayoutMode.grid
-                      : BrowserLayoutMode.list;
-                });
-              },
-              leadingIcon: Icon(
-                _layoutMode == BrowserLayoutMode.list
-                    ? Icons.grid_view_rounded
-                    : Icons.view_list_rounded,
-              ),
-              child: Text(
-                _layoutMode == BrowserLayoutMode.list
-                    ? 'Switch to Gallery'
-                    : 'Switch to List',
-              ),
+              onPressed: () => setState(() {
+                _layoutMode = _layoutMode == BrowserLayoutMode.list
+                    ? BrowserLayoutMode.grid
+                    : BrowserLayoutMode.list;
+              }),
+              leadingIcon: Icon(_layoutMode == BrowserLayoutMode.list
+                  ? Icons.grid_view_rounded
+                  : Icons.view_list_rounded),
+              child: Text(_layoutMode == BrowserLayoutMode.list
+                  ? 'Switch to Gallery'
+                  : 'Switch to List'),
             ),
             const PopupMenuDivider(),
-            // Cascading sorting options using Mixin properties directly
             SubmenuButton(
               menuChildren: [
                 _buildSortMenuButton(SortBy.name, 'Name', cs, textTheme),
@@ -1273,7 +1222,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Widget _buildBody(List<String> dirs, List<String> files) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2.5));
+      return const Center(
+          child: CircularProgressIndicator(strokeWidth: 2.5));
     }
     if (_currentItems.isEmpty) {
       return _EmptyPlaceholder(onBack: _navigateUp, atRoot: _atRoot);
@@ -1306,21 +1256,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 }
 
-// ── Horizontal Filter Chips Bar ──────────────────────────────────────────────
+// ── Filter chips bar ──────────────────────────────────────────────────────────
 
 class _FilterChipsBar extends StatelessWidget {
   final String? currentFilter;
   final ValueChanged<String?> onFilterChanged;
-
-  const _FilterChipsBar({
-    required this.currentFilter,
-    required this.onFilterChanged,
-  });
+  const _FilterChipsBar(
+      {required this.currentFilter, required this.onFilterChanged});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-
     return Container(
       height: 48,
       color: cs.surface,
@@ -1328,36 +1274,32 @@ class _FilterChipsBar extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         children: [
-          _buildChip(context, null, 'All Files', Icons.all_inclusive_rounded),
+          _chip(context, null,       'All Files',  Icons.all_inclusive_rounded),
           const SizedBox(width: 8),
-          _buildChip(context, 'image', 'Images', Icons.image_outlined),
+          _chip(context, 'image',    'Images',     Icons.image_outlined),
           const SizedBox(width: 8),
-          _buildChip(context, 'video', 'Videos', Icons.videocam_outlined),
+          _chip(context, 'video',    'Videos',     Icons.videocam_outlined),
           const SizedBox(width: 8),
-          _buildChip(context, 'audio', 'Audio', Icons.audiotrack_rounded),
+          _chip(context, 'audio',    'Audio',      Icons.audiotrack_rounded),
           const SizedBox(width: 8),
-          _buildChip(context, 'document', 'Documents', Icons.description_outlined),
+          _chip(context, 'document', 'Documents',  Icons.description_outlined),
         ],
       ),
     );
   }
 
-  Widget _buildChip(BuildContext context, String? filter, String label, IconData icon) {
-    final cs = Theme.of(context).colorScheme;
+  Widget _chip(BuildContext context, String? filter, String label,
+      IconData icon) {
+    final cs         = Theme.of(context).colorScheme;
     final isSelected = currentFilter == filter;
-
     return FilterChip(
       showCheckmark: false,
-      avatar: Icon(
-        icon,
-        size: 16,
-        color: isSelected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
-      ),
+      avatar: Icon(icon, size: 16,
+          color: isSelected ? cs.onPrimaryContainer : cs.onSurfaceVariant),
       label: Text(label),
       selected: isSelected,
-      onSelected: (selected) {
-        onFilterChanged(selected ? filter : null);
-      },
+      onSelected: (selected) =>
+          onFilterChanged(selected ? filter : null),
     );
   }
 }
@@ -1368,50 +1310,35 @@ class _StatusBar extends StatelessWidget {
   final String message;
   final bool isError;
   final VoidCallback onDismiss;
-
-  const _StatusBar({
-    required this.message,
-    required this.isError,
-    required this.onDismiss,
-  });
+  const _StatusBar(
+      {required this.message, required this.isError, required this.onDismiss});
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-
     final bg = isError ? cs.errorContainer : cs.primaryContainer;
     final fg = isError ? cs.onErrorContainer : cs.onPrimaryContainer;
-
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 200),
       child: Container(
         key: ValueKey(message),
         color: bg,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline_rounded : Icons.info_outline_rounded,
-              size: 16,
-              color: fg,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message,
-                style: textTheme.bodySmall?.copyWith(
-                  color: fg,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            GestureDetector(
-              onTap: onDismiss,
-              child: Icon(Icons.close_rounded, size: 16, color: fg),
-            ),
-          ],
-        ),
+        child: Row(children: [
+          Icon(isError
+              ? Icons.error_outline_rounded
+              : Icons.info_outline_rounded,
+              size: 16, color: fg),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message,
+              style: textTheme.bodySmall
+                  ?.copyWith(color: fg, fontWeight: FontWeight.w600))),
+          GestureDetector(
+            onTap: onDismiss,
+            child: Icon(Icons.close_rounded, size: 16, color: fg),
+          ),
+        ]),
       ),
     );
   }
@@ -1424,7 +1351,6 @@ class _StatsBar extends StatelessWidget {
   final int fileCount;
   final int freeSpaceBytes;
   final bool isFiltered;
-
   const _StatsBar({
     required this.dirCount,
     required this.fileCount,
@@ -1434,59 +1360,46 @@ class _StatsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-
     return Container(
       color: cs.surface,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        children: [
-          _buildStatItem(context, Icons.folder_rounded, '$dirCount folders'),
-          const SizedBox(width: 12),
-          _buildStatItem(context, Icons.description_rounded, '$fileCount files'),
-          const Spacer(),
-          if (isFiltered) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: cs.primaryContainer,
-                borderRadius: BorderRadius.circular(100),
-              ),
-              child: Text(
-                'filtered',
-                style: textTheme.labelSmall?.copyWith(
-                  color: cs.onPrimaryContainer,
-                  fontSize: 8,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+      child: Row(children: [
+        _stat(context, Icons.folder_rounded, '$dirCount folders'),
+        const SizedBox(width: 12),
+        _stat(context, Icons.description_rounded, '$fileCount files'),
+        const Spacer(),
+        if (isFiltered) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: cs.primaryContainer,
+              borderRadius: BorderRadius.circular(100),
             ),
-            const SizedBox(width: 12),
-          ],
-          _buildStatItem(context, Icons.storage_rounded, '${formatBytes(freeSpaceBytes)} free'),
+            child: Text('filtered',
+                style: textTheme.labelSmall?.copyWith(
+                    color: cs.onPrimaryContainer,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 12),
         ],
-      ),
+        _stat(context, Icons.storage_rounded,
+            '${formatBytes(freeSpaceBytes)} free'),
+      ]),
     );
   }
 
-  Widget _buildStatItem(BuildContext context, IconData icon, String text) {
-    final cs = Theme.of(context).colorScheme;
+  Widget _stat(BuildContext context, IconData icon, String text) {
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: cs.onSurfaceVariant),
-        const SizedBox(width: 6),
-        Text(
-          text, 
-          style: textTheme.bodySmall?.copyWith(
-            color: cs.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 14, color: cs.onSurfaceVariant),
+      const SizedBox(width: 6),
+      Text(text,
+          style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+    ]);
   }
 }
 
@@ -1499,41 +1412,31 @@ class _EmptyPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min, 
-          children: [
-            Icon(Icons.folder_open_rounded, size: 48, color: cs.outline),
-            const SizedBox(height: 16),
-            Text(
-              'Empty Folder',
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.folder_open_rounded, size: 48, color: cs.outline),
+          const SizedBox(height: 16),
+          Text('Empty Folder',
+              style: textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Text('Tap + to create files or import from device.',
+              style: textTheme.bodySmall
+                  ?.copyWith(color: cs.onSurfaceVariant),
+              textAlign: TextAlign.center),
+          if (!atRoot) ...[
+            const SizedBox(height: 20),
+            TextButton.icon(
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_upward_rounded, size: 16),
+              label: const Text('Go back'),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Tap + to create files or import from device.',
-              style: textTheme.bodySmall?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (!atRoot) ...[
-              const SizedBox(height: 20),
-              TextButton.icon(
-                onPressed: onBack,
-                icon: const Icon(Icons.arrow_upward_rounded, size: 16),
-                label: const Text('Go back'),
-              ),
-            ],
           ],
-        ),
+        ]),
       ),
     );
   }
@@ -1545,29 +1448,22 @@ class _SearchEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.search_off_rounded, size: 48, color: cs.outline),
           const SizedBox(height: 16),
-          Text(
-            'No results', 
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text('No results',
+              style: textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          Text(
-            'Nothing in this folder matches "$query".',
-            style: textTheme.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
+          Text('Nothing in this folder matches "$query".',
+              style: textTheme.bodySmall
+                  ?.copyWith(color: cs.onSurfaceVariant),
+              textAlign: TextAlign.center),
         ]),
       ),
     );
