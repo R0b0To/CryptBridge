@@ -75,12 +75,7 @@ class _VaultDashboardState extends State<VaultDashboard>
     _autoCloseTimers[container.volId] = Timer(Duration(minutes: mins), () async {
       if (!mounted) return;
 
-      // BUG-03 fix: acquireLockGuard is an atomic check-and-set in the Dart
-      // event loop. If a batch begins between the check and the lock call in
-      // the old code, the guard would have caught it.
       if (!vaultExplorerApi.acquireLockGuard(container.volId)) {
-        // A batch is active or another lock is pending — retry after the
-        // minimum auto-close interval to honour the intent without spinning.
         _scheduleAutoClose(container);
         return;
       }
@@ -119,14 +114,12 @@ class _VaultDashboardState extends State<VaultDashboard>
   void _onContainerLocked(int volId) {
     _cancelAutoClose(volId);
 
-    // SEC-05 fix: clear clipboard when the source container is locked so
-    // stale paths from a now-locked container cannot be pasted.
+    final lockedContainer = _mounted.where((c) => c.volId == volId).firstOrNull;
+
     final clip = CrossContainerClipboard.instance;
-    final locked = _mounted.firstWhere(
-      (c) => c.volId == volId,
-      orElse: () => _mounted.first, // fallback; checked below
-    );
-    if (clip.hasItems && clip.sourceContainer?.volId == volId) {
+    if (lockedContainer != null &&
+        clip.hasItems &&
+        clip.sourceContainer?.volId == volId) {
       clip.clear();
     }
 
@@ -241,7 +234,6 @@ class _VaultDashboardState extends State<VaultDashboard>
     );
     if (confirmed != true) return;
 
-    // ARCH-04 fix: single call handles JSON, config, and Keystore atomically.
     await ContainerRepository.instance.remove(uri);
     setState(() => _records.remove(uri));
   }

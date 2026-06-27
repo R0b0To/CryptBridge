@@ -71,40 +71,6 @@ class ContainerRepository {
   /// Invalidates the in-memory cache, forcing a reload on next access.
   void invalidate() => _cache = null;
 
-  // ── Migration ─────────────────────────────────────────────────────────────
-
-  /// One-time migration from the legacy split-file format.
-  /// Safe to call repeatedly — is a no-op if already migrated.
-  Future<void> migrateFromLegacy({
-    required List<Map<String, String>> savedList,
-    required List<Map<String, dynamic>> configList,
-  }) async {
-    final targetFile = await _dataFile;
-    if (await targetFile.exists()) return; // already migrated
-
-    await _ensureLoaded();
-    for (final saved in savedList) {
-      final uri  = saved['uri']  ?? '';
-      final name = saved['name'] ?? '';
-      if (uri.isEmpty) continue;
-
-      final cfgJson = configList.cast<Map<String, dynamic>?>().firstWhere(
-            (j) => j?['uri'] == uri,
-            orElse: () => null,
-          );
-
-      _cache![uri] = ContainerRecord(
-        uri: uri,
-        label: cfgJson?['label'] as String? ?? name,
-        rememberPassword: cfgJson?['rememberPassword'] as bool? ?? false,
-        autoCloseMins: cfgJson?['autoCloseMins'] as int? ?? 0,
-        documentProvider: cfgJson?['documentProvider'] as bool? ??
-            cfgJson?['mountAsDocumentProvider'] as bool? ?? false,
-      );
-    }
-    await _persist();
-  }
-
   // ── Internals ─────────────────────────────────────────────────────────────
 
   static String _keystoreKey(String uri) {

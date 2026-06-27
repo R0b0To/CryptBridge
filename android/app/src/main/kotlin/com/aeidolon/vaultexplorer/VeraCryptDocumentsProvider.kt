@@ -49,15 +49,14 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
 
     override fun onCreate() = true
 
-    // Opens a *new* PFD from the content URI.  Use only for one-shot calls
-    // (getFileSize in init, thumbnail extraction) where we need a raw fd.
-    // For streaming (ProxyFileDescriptorCallback) use the session PFD and dup().
-    private fun getFd(uriString: String, mode: String): Int {
+    private fun openPfd(uriString: String, mode: String): ParcelFileDescriptor {
         val uri = Uri.parse(uriString)
-        val pfd = context?.contentResolver?.openFileDescriptor(uri, mode)
-            ?: throw FileNotFoundException("Could not open PFD for $mode")
-        return pfd.detachFd()
+        return context?.contentResolver?.openFileDescriptor(uri, mode)
+            ?: throw FileNotFoundException("Could not open PFD for $mode on $uriString")
     }
+
+    private fun detachFd(uriString: String, mode: String): Int =
+        openPfd(uriString, mode).detachFd()
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         var flags = DocumentsContract.Root.FLAG_SUPPORTS_CREATE or
@@ -121,14 +120,16 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         val fatPath = parts.drop(2).joinToString(":")
         val isDir   = type == "dir"
         val displayName = if (fatPath.isEmpty()) "Root $volId" else fatPath.substringAfterLast("/")
-        val mimeType    = if (isDir) DocumentsContract.Document.MIME_TYPE_DIR else getMimeType(displayName)
+        val mimeType    = if (isDir) DocumentsContract.Document.MIME_TYPE_DIR
+                          else MimeTypeHelper.getMimeType(displayName)
 
         val size: Long = if (isDir) 0L else {
             try {
                 val session = VeraCryptSession.activeSessions[volId]
                 if (session != null) {
                     synchronized(VeraCryptSession.locks[volId]) {
-                        VeraCryptEngine.getFileSizeNative(getFd(session.uri, "r"), "", 0, fatPath, volId)
+                        VeraCryptEngine.getFileSizeNative(
+                            detachFd(session.uri, "r"), "", 0, fatPath, volId)
                     }
                 } else 0L
             } catch (_: Exception) { 0L }
@@ -167,7 +168,8 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
 
         try {
             val files = synchronized(VeraCryptSession.locks[volId]) {
-                VeraCryptEngine.listDirectoryNative(getFd(session.uri, "r"), "", 0, parentFatPath, volId)
+                VeraCryptEngine.listDirectoryNative(
+                    detachFd(session.uri, "r"), "", 0, parentFatPath, volId)
             }
             files?.forEach { file ->
                 if (file.startsWith("System:")) return@forEach
@@ -176,7 +178,8 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
                 val size      = if (isDir) 0L else file.substringAfter("|", "0").toLongOrNull() ?: 0L
                 val childFatPath = if (parentFatPath.isEmpty()) cleanName else "$parentFatPath/$cleanName"
                 val childType = if (isDir) "dir" else "file"
-                val childMime = if (isDir) DocumentsContract.Document.MIME_TYPE_DIR else getMimeType(cleanName)
+                val childMime = if (isDir) DocumentsContract.Document.MIME_TYPE_DIR
+                                else MimeTypeHelper.getMimeType(cleanName)
 
                 var flags = DocumentsContract.Document.FLAG_SUPPORTS_DELETE
                 if (isDir) flags = flags or DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE
@@ -213,7 +216,8 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
 
         val success = if (isDirectory) {
             synchronized(VeraCryptSession.locks[volId]) {
-                VeraCryptEngine.createDirectoryNative(getFd(session.uri, "rw"), "", 0, cleanPath, volId)
+                VeraCryptEngine.createDirectoryNative(
+                    detachFd(session.uri, "rw"), "", 0, cleanPath, volId)
             }
         } else {
             val tempFile = File(context?.cacheDir, "vc_new_${volId}_${cleanPath.hashCode()}_$fileName")
@@ -221,7 +225,8 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
                 tempFile.delete()
                 tempFile.createNewFile()
                 synchronized(VeraCryptSession.locks[volId]) {
-                    VeraCryptEngine.writeBackFileNative(getFd(session.uri, "rw"), "", 0, cleanPath, tempFile.absolutePath, volId)
+                    VeraCryptEngine.writeBackFileNative(
+                        detachFd(session.uri, "rw"), "", 0, cleanPath, tempFile.absolutePath, volId)
                 }
             } finally {
                 tempFile.delete()
@@ -247,7 +252,7 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         val fatPath = parts.drop(2).joinToString(":")
 
         val success = synchronized(VeraCryptSession.locks[volId]) {
-            VeraCryptEngine.deleteFileNative(getFd(session.uri, "rw"), "", 0, fatPath, volId)
+            VeraCryptEngine.deleteFileNative(detachFd(session.uri, "rw"), "", 0, fatPath, volId)
         }
         if (!success) throw FileNotFoundException("Delete failed for $fatPath")
 
@@ -289,7 +294,6 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         }
     }
 
-    // Extracts the image to a pipe via a background thread and returns the read-end as an AFD.
     @Throws(FileNotFoundException::class)
     override fun openDocumentThumbnail(
         documentId: String?,
@@ -311,13 +315,9 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         Thread {
             val tempFile = File(context?.cacheDir, "thumb_${System.nanoTime()}")
             try {
-                val pfd = context?.contentResolver
-                    ?.openFileDescriptor(Uri.parse(session.uri), "r")
-                    ?: throw FileNotFoundException("Cannot open container for thumbnail")
-
                 val ok = synchronized(VeraCryptSession.locks[volId]) {
                     VeraCryptEngine.unlockAndExtractNative(
-                        pfd.detachFd(), "", 0, fatPath, tempFile.absolutePath, volId)
+                        detachFd(session.uri, "r"), "", 0, fatPath, tempFile.absolutePath, volId)
                 }
 
                 if (ok && tempFile.exists()) {
@@ -333,14 +333,14 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
                             bmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
                         }
                         bmp.recycle()
-                        return@Thread  // writeEnd closed by AutoCloseOutputStream
+                        return@Thread
                     }
                 }
             } catch (e: Exception) {
                 android.util.Log.e("vaultexplorer", "openDocumentThumbnail: ${e.message}")
             } finally {
                 if (tempFile.exists()) tempFile.delete()
-                runCatching { writeEnd.close() }  // no-op if already closed above
+                runCatching { writeEnd.close() }
             }
         }.start()
 
@@ -445,7 +445,7 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
 
     private fun getRealSpace(session: ContainerSession): Pair<Long, Long> = try {
         val space = synchronized(VeraCryptSession.locks[session.volId]) {
-            VeraCryptEngine.getSpaceInfoNative(getFd(session.uri, "r"), "", 0, session.volId)
+            VeraCryptEngine.getSpaceInfoNative(detachFd(session.uri, "r"), "", 0, session.volId)
         }
         if (space != null && space.size > 1) Pair(space[0], space[1]) else Pair(0L, 0L)
     } catch (_: Exception) { Pair(0L, 0L) }
@@ -467,16 +467,6 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         return uri.lastPathSegment?.substringAfterLast('/') ?: "Container"
     }
 
-    private fun getMimeType(fileName: String): String = when {
-        fileName.endsWith(".png",  true)                                    -> "image/png"
-        fileName.endsWith(".jpg",  true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
-        fileName.endsWith(".webp", true)                                    -> "image/webp"
-        fileName.endsWith(".gif",  true)                                    -> "image/gif"
-        fileName.endsWith(".mp4",  true) || fileName.endsWith(".m4v",  true) -> "video/mp4"
-        fileName.endsWith(".webm", true)                                    -> "video/webm"
-        fileName.endsWith(".mkv",  true)                                    -> "video/x-matroska"
-        fileName.endsWith(".txt",  true)                                    -> "text/plain"
-        fileName.endsWith(".pdf",  true)                                    -> "application/pdf"
-        else                                                                 -> "application/octet-stream"
-    }
+    // Delegate to shared helper — no local copy.
+    private fun getMimeType(fileName: String): String = MimeTypeHelper.getMimeType(fileName)
 }

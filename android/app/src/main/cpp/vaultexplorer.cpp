@@ -7,7 +7,7 @@
 #include <sstream>
 #include <cstring>
 #include <unistd.h>
-#include <sys/stat.h>        
+#include <sys/stat.h>
 #include <memory>
 #include <algorithm>
 
@@ -51,7 +51,7 @@ static bool _globalInit = [](){
         activeIsRelTweak[i]       = false;
         isDataCtxInitialized[i]   = false;
         activeFileSize[i]         = 0;
-        fsMounted[i]               = false;
+        fsMounted[i]              = false;
     }
     return true;
 }();
@@ -214,7 +214,10 @@ extern "C" DWORD get_fattime() { return 0; }
 // ----------------------------------------------------------------====
 
 bool prepareSession(int fd, const char* password, int pim, int volId, bool forceDerive) {
-    if (volId >= MAX_VOLUMES) return false;
+    if (volId >= MAX_VOLUMES) {
+        close(fd);
+        return false;
+    }
 
     if (!forceDerive && isDataCtxInitialized[volId]) {
         struct stat st;
@@ -227,7 +230,10 @@ bool prepareSession(int fd, const char* password, int pim, int volId, bool force
     LOGI("Running PBKDF2 Key Derivation for Volume %d...", volId);
 
     unsigned char headerBuf[512];
-    if (pread(fd, headerBuf, 512, 0) != 512) return false;
+    if (pread(fd, headerBuf, 512, 0) != 512) {
+        close(fd);
+        return false;
+    }
 
     {
         struct stat st;
@@ -263,6 +269,7 @@ bool prepareSession(int fd, const char* password, int pim, int volId, bool force
 
     if (decH[0] != 'V' || decH[1] != 'E' || decH[2] != 'R' || decH[3] != 'A') {
         mbedtls_platform_zeroize(hKey, sizeof(hKey));
+        close(fd);
         return false;
     }
 
@@ -327,6 +334,7 @@ bool prepareSession(int fd, const char* password, int pim, int volId, bool force
         mbedtls_platform_zeroize(hKey, sizeof(hKey));
         mbedtls_platform_zeroize(dKey, sizeof(dKey));
         mbedtls_platform_zeroize(decH, sizeof(decH));
+        close(fd);
         return false;
     }
 
@@ -401,10 +409,8 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_unlockAndListNative(
         JNIEnv* env, jobject, jint fd, jstring password, jint pim, jint volId) {
 
     const char* nativePass = env->GetStringUTFChars(password, nullptr);
-
     if (!prepareSession(fd, nativePass, pim, volId, true)) {
         env->ReleaseStringUTFChars(password, nativePass);
-        close(fd);
         return nullptr;
     }
 
@@ -413,7 +419,6 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_unlockAndListNative(
         result = buildDirectoryListing(env, volId, nullptr);
     } else {
         LOGI("FATFS Mount failed on volume %d", volId);
-        result = nullptr;
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
@@ -448,12 +453,12 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_unlockAndExtractNative(
                 f_close(&f);
             }
         }
+        close(fd);
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(targetFileName, targetName);
     env->ReleaseStringUTFChars(destPath, destination);
-    close(fd);
     return success ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -487,12 +492,12 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_writeBackFileNative(
                 f_close(&f);
             }
         }
+        close(fd);
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(targetFileName, targetName);
     env->ReleaseStringUTFChars(sourcePath, source);
-    close(fd);
     return success ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -511,11 +516,11 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_deleteFileNative(
             std::string fatPath = std::string(drivePaths[volId]) + "/" + targetName;
             success = (f_unlink(fatPath.c_str()) == FR_OK);
         }
+        close(fd);
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(targetFileName, targetName);
-    close(fd);
     return success ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -556,11 +561,11 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_getFileSizeNative(
                 f_close(&f);
             }
         }
+        close(fd);
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(targetFileName, targetName);
-    close(fd);
     return size;
 }
 
@@ -590,11 +595,11 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_readFileChunkNative(
                 f_close(&f);
             }
         }
+        close(fd);
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(targetFileName, targetName);
-    close(fd);
     return retArray;
 }
 
@@ -611,11 +616,11 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_listDirectoryNative(
         if (ensureMounted(volId)) {
             result = buildDirectoryListing(env, volId, nativePath);
         }
+        close(fd);
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(dirPath, nativePath);
-    close(fd);
     return result;
 }
 
@@ -633,11 +638,11 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createDirectoryNative(
             std::string fullPath = std::string(drivePaths[volId]) + "/" + nativePath;
             success = (f_mkdir(fullPath.c_str()) == FR_OK);
         }
+        close(fd);
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(dirPath, nativePath);
-    close(fd);
     return success ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -658,12 +663,12 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_renameFileNative(
             std::string fullNew = std::string(drivePaths[volId]) + "/" + nativeNew;
             success = (f_rename(fullOld.c_str(), fullNew.c_str()) == FR_OK);
         }
+        close(fd);
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(oldPath, nativeOld);
     env->ReleaseStringUTFChars(newPath, nativeNew);
-    close(fd);
     return success ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -684,10 +689,10 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_getSpaceInfoNative(
                 freeBytes  = static_cast<jlong>(fre_clust)        * fs->csize * 512;
             }
         }
+        close(fd);
     }
 
     env->ReleaseStringUTFChars(password, nativePass);
-    close(fd);
 
     jlongArray ret = env->NewLongArray(2);
     const jlong tmp[2] = {totalBytes, freeBytes};
@@ -713,10 +718,9 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createContainerNative(
             break;
         }
 
-        // Find a free volume slot
         int volId = -1;
         for (int i = 0; i < MAX_VOLUMES; i++) {
-            if (activeFd[i] < 0) { volId = i; break; }
+            if (!isDataCtxInitialized[i]) { volId = i; break; }
         }
         if (volId == -1) {
             LOGI("createContainer: no free slots available");
@@ -909,8 +913,7 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_createContainerNative(
 
     } while (false);
 
-    volatile unsigned char* vp = combinedMasterKey;
-    for (size_t i = 0; i < sizeof(combinedMasterKey); ++i) vp[i] = 0;
+    mbedtls_platform_zeroize(combinedMasterKey, sizeof(combinedMasterKey));
 
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(fileSystem, nativeFS);
@@ -947,12 +950,12 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_writeFileChunkNative(
                 f_close(&f);
             }
         }
+        close(fd);
     }
 
     env->ReleaseByteArrayElements(data, body, JNI_ABORT);
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(targetFileName, targetName);
-    close(fd);
     return success ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -968,7 +971,7 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_hashPasswordNative(
     if (password == nullptr || salt == nullptr) return nullptr;
 
     const jsize saltLen = env->GetArrayLength(salt);
-    if (saltLen == 0) return nullptr;  // zero-length salt is invalid
+    if (saltLen == 0) return nullptr;
 
     const char* nativePass = env->GetStringUTFChars(password, nullptr);
     jbyte* saltData        = env->GetByteArrayElements(salt, nullptr);

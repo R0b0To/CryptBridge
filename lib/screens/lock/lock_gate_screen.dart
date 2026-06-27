@@ -106,9 +106,6 @@ class _LockGateScreenState extends State<LockGateScreen> {
     }
   }
 
-  /// Runs PBKDF2 key-derivation and persists the upgraded hash to Keystore
-  /// in the background so it doesn't block navigation.
-  /// Non-fatal on failure — the user will use the legacy path again next launch.
   void _upgradeMasterPasswordHashInBackground(AppSettings s, String pw) {
     AppSettings.derivePasswordHash(pw).then((hashSalt) async {
       await AppSettingsService.saveMasterPassword(s, hashSalt.$1, hashSalt.$2);
