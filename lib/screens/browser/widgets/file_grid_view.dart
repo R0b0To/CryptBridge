@@ -491,7 +491,7 @@ Future<void> _load() async {
 
 class _EncryptedImageGridThumb extends StatelessWidget {
   static final _cache   = LruCache<String, Future<Uint8List>>(60);
-  static final _limiter = ConcurrencyLimiter(3);
+  static final _limiter = ConcurrencyLimiter(2); // Controls system I/O limits
 
   final MountedContainer container;
   final String filePath;
@@ -503,67 +503,46 @@ class _EncryptedImageGridThumb extends StatelessWidget {
     required this.cacheMode,
   });
 
- /// Downscales raw image bytes in a background isolate to keep the UI thread smooth.
-  static Future<Uint8List> _resizeImage(Uint8List data,
-      {required int targetWidth}) async {
-    try {
-      return await Isolate.run(() async {
-        final codec = await ui.instantiateImageCodec(
-          data,
-          targetWidth: targetWidth,
-        );
-        final frameInfo = await codec.getNextFrame();
-        final byteData =
-            await frameInfo.image.toByteData(format: ui.ImageByteFormat.png);
-        if (byteData == null) return data;
-        return byteData.buffer.asUint8List();
-      });
-    } catch (e) {
-      debugPrint('Background resize failed, running on main isolate fallback: $e');
-      // Defensive fallback to main isolate execution
-      final codec = await ui.instantiateImageCodec(
-        data,
-        targetWidth: targetWidth,
-      );
-      final frameInfo = await codec.getNextFrame();
-      final byteData =
-          await frameInfo.image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return data;
-      return byteData.buffer.asUint8List();
-    }
-  }
-
   static Future<Uint8List> _fetch(
     MountedContainer container,
     String path,
     ThumbnailCacheMode mode,
   ) async {
-    // 1. Persistent cache hit?
+    // 1. Check local secure cache (Super fast tiny file loading)
     final cached = await ThumbnailCacheService.get(
         container: container, filePath: path, mode: mode);
     if (cached != null && cached.isNotEmpty) return cached;
 
-    // 2. Read the entire file from container to ensure full decoder data
+    // 2. Cache Miss: Perform raw, uncompressed Native sequential read (Ultra-fast)
     final size = await vaultExplorerApi.getFileSize(container, path);
     if (size <= 0) throw Exception('File is empty');
 
-    // Read full size instead of capping at _kThumbReadLimit
-    final data = await vaultExplorerApi.readFileChunk(
-        container, path, 0, size);
-    if (data == null || data.isEmpty) throw Exception('No bytes read');
+    final rawBytes = await vaultExplorerApi.readFileChunk(container, path, 0, size);
+    if (rawBytes == null || rawBytes.isEmpty) throw Exception('No bytes read');
 
-    // 3. Downscale in memory
-    Uint8List thumbData;
-    try {
-      thumbData = await _resizeImage(data, targetWidth: 180);
-    } catch (_) {
-      thumbData = data;
+    // 3. Kick off Non-blocking Native Background caching
+    if (mode == ThumbnailCacheMode.appCache) {
+      _triggerBackgroundThumbnailGen(container, path);
     }
 
-    unawaited(ThumbnailCacheService.put(
-        container: container, filePath: path, data: thumbData, mode: mode));
+    // Return raw full-resolution bytes immediately. 
+    // Flutter's asynchronous image pipeline handles rescale rendering on GPU/IO threads.
+    return rawBytes;
+  }
 
-    return thumbData;
+  static void _triggerBackgroundThumbnailGen(MountedContainer container, String path) {
+    unawaited(() async {
+      try {
+        final key = await ThumbnailCacheService.getOrFetchKey();
+        await vaultExplorerApi.generateAndCacheThumbnail(
+          container: container,
+          filePath: path,
+          keyBytes: key.bytes,
+        );
+      } catch (e) {
+        debugPrint('Failed to queue background thumbnail generation: $e');
+      }
+    }());
   }
 
   @override

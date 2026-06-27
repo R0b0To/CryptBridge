@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/mounted_container.dart';
@@ -183,6 +184,46 @@ class VaultExplorerApi {
       },
     );
     return result;
+  }
+
+  /// Requests a scaled image thumbnail from the native Android JPEG pipeline.
+  /// Returns null on failure — callers will display a standard file fallback.
+  Future<Uint8List?> getImageThumbnail(
+      MountedContainer container, String fileName, {int targetSize = 180}) async {
+    try {
+      final Uint8List? bytes = await _channel.invokeMethod<Uint8List>(
+        'getImageThumbnail',
+        {
+          'filePath': container.uri,
+          'fileName': fileName,
+          'targetSize': targetSize,
+        },
+      );
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Triggers thumbnail generation and encryption entirely on native threads,
+  /// bypassing Dart and saving directly to local App Cache [ThumbnailCacheMode.appCache].
+  Future<void> generateAndCacheThumbnail({
+    required MountedContainer container,
+    required String filePath,
+    required List<int> keyBytes,
+  }) async {
+    try {
+      await _channel.invokeMethod<void>(
+        'generateAndCacheThumbnail',
+        {
+          'filePath': container.uri,
+          'fileName': filePath,
+          'keyBytes': Uint8List.fromList(keyBytes),
+        },
+      );
+    } catch (e) {
+      debugPrint('Background thumbnail build request failed: $e');
+    }
   }
 
   Future<List<String>?> listDirectory(

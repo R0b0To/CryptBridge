@@ -46,7 +46,13 @@ class ThumbnailCacheService {
       return Uint8List.fromList(decrypted);
     });
   }
-
+/// Retrieves or loads the key from secure storage, keeping it cached in memory.
+  static Future<enc.Key> getOrFetchKey() async {
+    if (_cachedKey != null) return _cachedKey!;
+    final key = await AppCacheEncryption.getEncryptionKey();
+    _cachedKey = key;
+    return key;
+  }
   /// Encrypts bytes with AES-GCM on a background isolate.
   static Future<Uint8List> _encryptBackground(
     Uint8List data,

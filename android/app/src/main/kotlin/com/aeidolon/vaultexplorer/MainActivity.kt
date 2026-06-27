@@ -18,11 +18,12 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.annotation.TargetApi
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaDataSource
 import android.media.MediaMetadataRetriever
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
-// Kotlin mirror of lib/services/channel_methods.dart — keep in sync.
 private object ChannelMethods {
     const val PICK_CONTAINER      = "pickContainer"
     const val CREATE_CONTAINER    = "createContainer"
@@ -43,6 +44,8 @@ private object ChannelMethods {
     const val DELETE_FILE         = "deleteFile"
     const val OPEN_WITH_APP       = "openWithApp"
     const val GET_VIDEO_THUMBNAIL = "getVideoThumbnail"
+    const val GET_IMAGE_THUMBNAIL = "getImageThumbnail"
+    const val GENERATE_AND_CACHE_THUMBNAIL = "generateAndCacheThumbnail" // Added
     const val HASH_PASSWORD       = "hashPassword"
     const val WRITE_FILE_CHUNK    = "writeFileChunk"
 }
@@ -115,6 +118,14 @@ class MainActivity : FlutterFragmentActivity() {
         } catch (_: Exception) {}
     }
 
+    private fun encodeKey(filePath: String): String {
+        val bytes = filePath.toByteArray(Charsets.UTF_8)
+        // Matches Dart's base64Url encoding layout
+        val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+        val trimmed = encoded.trim()
+        return if (trimmed.length > 180) trimmed.substring(0, 180) else trimmed
+    }
+
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -170,7 +181,7 @@ class MainActivity : FlutterFragmentActivity() {
                                 val uri = Uri.parse(uriString)
                                 val pfd = contentResolver.openFileDescriptor(uri, "rw")
                                     ?: throw Exception("Could not open file descriptor")
-                                val fd = pfd.detachFd() // Transfer raw FD lifecycle control directly to C++
+                                val fd = pfd.detachFd()
 
                                 val files = synchronized(VeraCryptSession.locks[targetVolId]) {
                                     VeraCryptEngine.unlockAndListNative(fd, password, pim, targetVolId)
@@ -284,6 +295,157 @@ class MainActivity : FlutterFragmentActivity() {
                                 runCatching { retriever?.release() }
                             }
                         }.start()
+                    }
+
+                    ChannelMethods.GET_IMAGE_THUMBNAIL -> {
+                        val uriString  = call.argument<String>("filePath")
+                        val fileName   = call.argument<String>("fileName")
+                        val targetSize = call.argument<Int>("targetSize") ?: 180
+
+                        if (uriString == null || fileName == null) {
+                            result.error("INVALID_ARGS", "filePath and fileName required", null)
+                            return@setMethodCallHandler
+                        }
+
+                        Thread {
+                            try {
+                                val volId = VeraCryptSession.getVolumeIdByUri(uriString)
+                                    ?: run {
+                                        runOnUiThread { result.error("NOT_MOUNTED", "Container not mounted", null) }
+                                        return@Thread
+                                    }
+
+                                val inputStream = VeraCryptInputStream(this, uriString, fileName, volId)
+                                
+                                val options = BitmapFactory.Options().apply {
+                                    inJustDecodeBounds = true
+                                }
+                                BitmapFactory.decodeStream(inputStream, null, options)
+                                inputStream.reset()
+
+                                val width = options.outWidth
+                                val height = options.outHeight
+
+                                var inSampleSize = 1
+                                if (width > targetSize || height > targetSize) {
+                                    val halfWidth = width / 2
+                                    val halfHeight = height / 2
+                                    while (halfWidth / inSampleSize >= targetSize && halfHeight / inSampleSize >= targetSize) {
+                                        inSampleSize *= 2
+                                    }
+                                }
+
+                                val decodeOptions = BitmapFactory.Options().apply {
+                                    this.inSampleSize = inSampleSize
+                                }
+                                val rawBitmap = BitmapFactory.decodeStream(inputStream, null, decodeOptions)
+                                inputStream.close()
+
+                                if (rawBitmap != null) {
+                                    val scaledBitmap = Bitmap.createScaledBitmap(rawBitmap, targetSize, targetSize, true)
+                                    if (scaledBitmap != rawBitmap) {
+                                        rawBitmap.recycle()
+                                    }
+
+                                    val stream = ByteArrayOutputStream()
+                                    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 75, stream)
+                                    val bytes = stream.toByteArray()
+                                    scaledBitmap.recycle()
+
+                                    runOnUiThread { result.success(bytes) }
+                                } else {
+                                    runOnUiThread { result.error("DECODE_FAILED", "Failed to decode image bytes", null) }
+                                }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("THUMBNAIL_ERROR", e.message, null) }
+                            }
+                        }.start()
+                    }
+
+                    // ── OPTIMIZATION: FIRE-AND-FORGET BACKGROUND CACHE GENERATION ──
+                    ChannelMethods.GENERATE_AND_CACHE_THUMBNAIL -> {
+                        val uriString = call.argument<String>("filePath")
+                        val fileName  = call.argument<String>("fileName")
+                        val keyBytes  = call.argument<ByteArray>("keyBytes")
+                        val targetSize = 180
+
+                        if (uriString == null || fileName == null || keyBytes == null) {
+                            result.success(null)
+                            return@setMethodCallHandler
+                        }
+
+                        Thread {
+                            try {
+                                val volId = VeraCryptSession.getVolumeIdByUri(uriString) ?: return@Thread
+                                val inputStream = VeraCryptInputStream(this, uriString, fileName, volId)
+                                
+                                val options = BitmapFactory.Options().apply {
+                                    inJustDecodeBounds = true
+                                }
+                                BitmapFactory.decodeStream(inputStream, null, options)
+                                inputStream.reset()
+
+                                val width = options.outWidth
+                                val height = options.outHeight
+
+                                var inSampleSize = 1
+                                if (width > targetSize || height > targetSize) {
+                                    val halfWidth = width / 2
+                                    val halfHeight = height / 2
+                                    while (halfWidth / inSampleSize >= targetSize && halfHeight / inSampleSize >= targetSize) {
+                                        inSampleSize *= 2
+                                    }
+                                }
+
+                                val decodeOptions = BitmapFactory.Options().apply {
+                                    this.inSampleSize = inSampleSize
+                                }
+                                val rawBitmap = BitmapFactory.decodeStream(inputStream, null, decodeOptions)
+                                inputStream.close()
+
+                                if (rawBitmap != null) {
+                                    val scaledBitmap = Bitmap.createScaledBitmap(rawBitmap, targetSize, targetSize, true)
+                                    if (scaledBitmap != rawBitmap) {
+                                        rawBitmap.recycle()
+                                    }
+
+                                    val stream = ByteArrayOutputStream()
+                                    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, stream)
+                                    val thumbData = stream.toByteArray()
+                                    scaledBitmap.recycle()
+
+                                    // Hardware AES-GCM Encrypt natively (12-byte random IV)
+                                    val secureRandom = java.security.SecureRandom()
+                                    val nonce = ByteArray(12)
+                                    secureRandom.nextBytes(nonce)
+
+                                    val secretKeySpec = javax.crypto.spec.SecretKeySpec(keyBytes, "AES")
+                                    val gcmParameterSpec = javax.crypto.spec.GCMParameterSpec(128, nonce)
+
+                                    val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+                                    cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, secretKeySpec, gcmParameterSpec)
+                                    val encryptedData = cipher.doFinal(thumbData)
+
+                                    // Concat: [nonce (12)] + [ciphertext + 16-byte GCM tag]
+                                    val outBytes = ByteArray(nonce.size + encryptedData.size)
+                                    System.arraycopy(nonce, 0, outBytes, 0, nonce.size)
+                                    System.arraycopy(encryptedData, 0, outBytes, nonce.size, encryptedData.size)
+
+                                    val cacheDir = this.cacheDir
+                                    val volDir = File(cacheDir, "thumbs/$volId")
+                                    if (!volDir.exists()) volDir.mkdirs()
+
+                                    val encodedKey = encodeKey(fileName)
+                                    val file = File(volDir, encodedKey)
+
+                                    val tmpFile = File(volDir, "$encodedKey.tmp")
+                                    tmpFile.writeBytes(outBytes)
+                                    tmpFile.renameTo(file)
+                                }
+                            } catch (_: Exception) {}
+                        }.start()
+
+                        result.success(null) // Exit channel task immediately, non-blocking
                     }
 
                     ChannelMethods.LOCK_CONTAINER -> {
@@ -872,7 +1034,81 @@ class MainActivity : FlutterFragmentActivity() {
     private fun getMimeType(fileName: String): String = MimeTypeHelper.getMimeType(fileName)
 }
 
-// ── VeraCryptMediaDataSource ───────────────────────────────────────────────────
+// ── VeraCryptInputStream (Optimized Subsampled Native Image Stream) ─────────────
+
+class VeraCryptInputStream(
+    private val context: Context,
+    private val uriString: String,
+    private val fileName: String,
+    private val volId: Int
+) : java.io.InputStream() {
+
+    private var position: Long = 0L
+    private var fileSize: Long = -1L
+    private var markedPosition: Long = 0L
+
+    init {
+        fileSize = synchronized(VeraCryptSession.locks[volId]) {
+            VeraCryptEngine.getFileSizeNative(-1, "", 0, fileName, volId)
+        }
+    }
+
+    override fun read(): Int {
+        if (fileSize >= 0 && position >= fileSize) return -1
+        val buf = ByteArray(1)
+        val read = read(buf, 0, 1)
+        return if (read > 0) buf[0].toInt() and 0xFF else -1
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (fileSize >= 0 && position >= fileSize) return -1
+        val currentSize = fileSize
+        val toRead = minOf(len.toLong(), currentSize - position).toInt()
+        if (toRead <= 0) return -1
+
+        val chunk = synchronized(VeraCryptSession.locks[volId]) {
+            VeraCryptEngine.readFileChunkNative(-1, "", 0, fileName, position, toRead, volId)
+        } ?: return -1
+
+        if (chunk.isEmpty()) return -1
+        val actual = minOf(chunk.size, toRead)
+        System.arraycopy(chunk, 0, b, off, actual)
+        position += actual
+        return actual
+    }
+
+    override fun skip(n: Long): Long {
+        if (n <= 0) return 0
+        val currentSize = fileSize
+        val actualSkip = minOf(n, currentSize - position)
+        position += actualSkip
+        return actualSkip
+    }
+
+    override fun available(): Int {
+        val currentSize = fileSize
+        return if (currentSize >= 0) {
+            val avail = currentSize - position
+            if (avail > Int.MAX_VALUE) Int.MAX_VALUE else avail.toInt()
+        } else 0
+    }
+
+    override fun markSupported(): Boolean = true
+
+    override fun mark(readlimit: Int) {
+        synchronized(this) {
+            markedPosition = position
+        }
+    }
+
+    override fun reset() {
+        synchronized(this) {
+            position = markedPosition
+        }
+    }
+}
+
+// ── VeraCryptMediaDataSource (Optimized Native Video Stream) ─────────────────────
 
 @TargetApi(Build.VERSION_CODES.M)
 class VeraCryptMediaDataSource(
