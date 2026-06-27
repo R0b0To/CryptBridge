@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 
 import '../../models/mounted_container.dart';
 import '../../services/app_settings_service.dart';
+import '../../services/container_repository.dart';
 import '../../services/cross_container_clipboard.dart';
-import '../../services/saved_containers.dart';
 import '../../services/vaultexplorer_api.dart';
 import '../settings/app_settings_screen.dart';
 import '../unlock/unlock_sheet.dart';
@@ -24,8 +24,7 @@ class VaultDashboard extends StatefulWidget {
 class _VaultDashboardState extends State<VaultDashboard>
     with WidgetsBindingObserver {
   final List<MountedContainer> _mounted = [];
-  List<Map<String, String>> _saved      = [];
-  Map<String, ContainerConfig> _configs  = {};
+  Map<String, ContainerRecord> _records  = {};
   AppSettings _appSettings               = AppSettings();
   bool _actionInFlight                   = false;
 
@@ -35,9 +34,7 @@ class _VaultDashboardState extends State<VaultDashboard>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadSaved();
-    _loadConfigs();
-    _loadAppSettings();
+    _loadAll();
   }
 
   @override
@@ -56,41 +53,44 @@ class _VaultDashboardState extends State<VaultDashboard>
     }
   }
 
-  Future<void> _loadSaved() async {
-    final saved = await SavedContainerService.loadContainers();
-    if (mounted) setState(() => _saved = saved);
+  Future<void> _loadAll() async {
+    final settings = await AppSettingsService.loadSettings();
+    final records  = await ContainerRepository.instance.loadAll();
+    if (mounted) {
+      setState(() {
+        _appSettings = settings;
+        _records     = Map.from(records);
+      });
+    }
   }
 
-  Future<void> _loadConfigs() async {
-    final configs = await AppSettingsService.loadContainerConfigs();
-    if (mounted) setState(() => _configs = configs);
-  }
-
-  Future<void> _loadAppSettings() async {
-    final s = await AppSettingsService.loadSettings();
-    if (mounted) setState(() => _appSettings = s);
-  }
-
-  // ── Auto-close ──────────────────────────────────────────────────────────
+  // ── Auto-close ────────────────────────────────────────────────────────────
 
   void _scheduleAutoClose(MountedContainer container) {
-    final cfg  = _configs[container.uri];
-    final mins = cfg?.autoCloseMins ?? 0;
+    final record = _records[container.uri];
+    final mins   = record?.autoCloseMins ?? 0;
     if (mins <= 0) return;
+
     _autoCloseTimers[container.volId]?.cancel();
     _autoCloseTimers[container.volId] = Timer(Duration(minutes: mins), () async {
       if (!mounted) return;
 
-      // FIX (Issue #5): don't lock while a multi-step operation (paste,
-      // import) is in flight.  Re-schedule and check again after a short
-      // delay so the timer still fires once the operation completes.
-      if (vaultExplorerApi.hasActiveBatch(container.volId)) {
+      // BUG-03 fix: acquireLockGuard is an atomic check-and-set in the Dart
+      // event loop. If a batch begins between the check and the lock call in
+      // the old code, the guard would have caught it.
+      if (!vaultExplorerApi.acquireLockGuard(container.volId)) {
+        // A batch is active or another lock is pending — retry after the
+        // minimum auto-close interval to honour the intent without spinning.
         _scheduleAutoClose(container);
         return;
       }
 
-      await vaultExplorerApi.lockContainer(container.uri);
-      _onContainerLocked(container.volId);
+      try {
+        await vaultExplorerApi.lockContainer(container.uri);
+        _onContainerLocked(container.volId);
+      } finally {
+        vaultExplorerApi.releaseLockGuard(container.volId);
+      }
     });
   }
 
@@ -99,24 +99,37 @@ class _VaultDashboardState extends State<VaultDashboard>
     _autoCloseTimers.remove(volId);
   }
 
-  // ── Container lifecycle ─────────────────────────────────────────────────
+  // ── Container lifecycle ───────────────────────────────────────────────────
 
   void _onContainerMounted(MountedContainer container) {
     setState(() => _mounted.add(container));
     _scheduleAutoClose(container);
-    if (!_configs.containsKey(container.uri)) {
-      final defaultCfg = ContainerConfig(
+
+    if (!_records.containsKey(container.uri)) {
+      final record = ContainerRecord(
         uri: container.uri,
         label: container.displayName,
         documentProvider: _appSettings.defaultDocumentProvider,
       );
-      _configs[container.uri] = defaultCfg;
-      AppSettingsService.saveContainerConfig(defaultCfg);
+      _records[container.uri] = record;
+      ContainerRepository.instance.save(record);
     }
   }
 
   void _onContainerLocked(int volId) {
     _cancelAutoClose(volId);
+
+    // SEC-05 fix: clear clipboard when the source container is locked so
+    // stale paths from a now-locked container cannot be pasted.
+    final clip = CrossContainerClipboard.instance;
+    final locked = _mounted.firstWhere(
+      (c) => c.volId == volId,
+      orElse: () => _mounted.first, // fallback; checked below
+    );
+    if (clip.hasItems && clip.sourceContainer?.volId == volId) {
+      clip.clear();
+    }
+
     setState(() => _mounted.removeWhere((c) => c.volId == volId));
   }
 
@@ -135,7 +148,7 @@ class _VaultDashboardState extends State<VaultDashboard>
     } catch (_) {}
   }
 
-  // ── Unlock ──────────────────────────────────────────────────────────────
+  // ── Unlock ────────────────────────────────────────────────────────────────
 
   Future<void> _showUnlockSheet({String? uri, String? name}) async {
     if (_actionInFlight) return;
@@ -143,16 +156,16 @@ class _VaultDashboardState extends State<VaultDashboard>
 
     String? rememberedPassword;
     if (uri != null) {
-      final cfg = _configs[uri];
-      // FIX: removed the now-deleted synchronous `hasPassword` getter;
-      // simply try getPassword() — it returns null if nothing is stored.
-      if (cfg?.rememberPassword == true) {
-        rememberedPassword = await cfg!.getPassword();
+      final record = _records[uri];
+      if (record?.rememberPassword == true) {
+        rememberedPassword =
+            await ContainerRepository.instance.getPassword(uri);
       }
     }
 
-    final cfg         = uri != null ? _configs[uri] : null;
-    final docProvider = cfg?.documentProvider ?? _appSettings.defaultDocumentProvider;
+    final record      = uri != null ? _records[uri] : null;
+    final docProvider = record?.documentProvider ??
+        _appSettings.defaultDocumentProvider;
 
     try {
       await showModalBottomSheet(
@@ -166,9 +179,9 @@ class _VaultDashboardState extends State<VaultDashboard>
           documentProvider: docProvider,
         ),
       );
-      _loadSaved();
+      await _loadAll();
     } finally {
-      setState(() => _actionInFlight = false);
+      if (mounted) setState(() => _actionInFlight = false);
     }
   }
 
@@ -179,23 +192,23 @@ class _VaultDashboardState extends State<VaultDashboard>
       context: context,
       isScrollControlled: true,
       builder: (_) => const CreateContainerSheet(),
-    ).whenComplete(() => setState(() => _actionInFlight = false));
+    ).whenComplete(() {
+      if (mounted) setState(() => _actionInFlight = false);
+    });
   }
 
   void _showContainerConfig({required String uri, required String currentLabel}) {
     HapticFeedback.mediumImpact();
-    final existing = _configs[uri];
+    final existing = _records[uri];
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) => ContainerConfigSheet(
         uri: uri,
         currentLabel: currentLabel,
-        existingConfig: existing,
-        onSaved: (cfg) {
-          setState(() => _configs[uri] = cfg);
-          SavedContainerService.saveContainer(uri, cfg.label);
-          _loadSaved();
+        existingRecord: existing,
+        onSaved: (record) async {
+          setState(() => _records[uri] = record);
           final idx = _mounted.indexWhere((m) => m.uri == uri);
           if (idx != -1) _scheduleAutoClose(_mounted[idx]);
         },
@@ -227,10 +240,10 @@ class _VaultDashboardState extends State<VaultDashboard>
       ),
     );
     if (confirmed != true) return;
-    await SavedContainerService.removeContainer(uri);
-    await AppSettingsService.removeContainerConfig(uri);
-    setState(() => _configs.remove(uri));
-    _loadSaved();
+
+    // ARCH-04 fix: single call handles JSON, config, and Keystore atomically.
+    await ContainerRepository.instance.remove(uri);
+    setState(() => _records.remove(uri));
   }
 
   @override
@@ -239,10 +252,13 @@ class _VaultDashboardState extends State<VaultDashboard>
     final textTheme = Theme.of(context).textTheme;
     final clipboard = CrossContainerClipboard.instance;
 
+    // Build display list: mounted containers first, then saved-but-locked.
     final displayItems = <dynamic>[];
     displayItems.addAll(_mounted);
-    for (final s in _saved) {
-      if (!_mounted.any((m) => m.uri == s['uri'])) displayItems.add(s);
+    for (final entry in _records.entries) {
+      if (!_mounted.any((m) => m.uri == entry.key)) {
+        displayItems.add(entry.value);
+      }
     }
 
     return Scaffold(
@@ -261,7 +277,7 @@ class _VaultDashboardState extends State<VaultDashboard>
             onPressed: () async {
               await Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const AppSettingsScreen()));
-              _loadAppSettings();
+              _loadAll();
             },
           ),
           Padding(
@@ -321,17 +337,18 @@ class _VaultDashboardState extends State<VaultDashboard>
                         ),
                       );
                     } else {
-                      final uri   = item['uri'] as String;
-                      final name  = item['name'] as String;
-                      final cfg   = _configs[uri];
-                      final label = cfg?.label.isNotEmpty == true ? cfg!.label : name;
+                      final record = item as ContainerRecord;
                       return SavedContainerCard(
-                        name: label,
-                        uri: uri,
-                        onUnlock: () => _showUnlockSheet(uri: uri, name: name),
-                        onLongPress: () =>
-                            _showContainerConfig(uri: uri, currentLabel: label),
-                        onForget: () => _forgetContainer(uri, label),
+                        name: record.label.isNotEmpty
+                            ? record.label
+                            : record.uri.split('/').last,
+                        uri: record.uri,
+                        onUnlock: () => _showUnlockSheet(
+                            uri: record.uri, name: record.label),
+                        onLongPress: () => _showContainerConfig(
+                            uri: record.uri, currentLabel: record.label),
+                        onForget: () =>
+                            _forgetContainer(record.uri, record.label),
                       );
                     }
                   },
@@ -368,7 +385,8 @@ class _ClipboardStatusStrip extends StatelessWidget {
             children: [
               Text(clipboard.summary,
                   style: textTheme.labelLarge?.copyWith(
-                      color: cs.onPrimaryContainer, fontWeight: FontWeight.w600)),
+                      color: cs.onPrimaryContainer,
+                      fontWeight: FontWeight.w600)),
               const SizedBox(height: 2),
               Text('Open a container and tap "Paste Here"',
                   style: textTheme.bodySmall?.copyWith(

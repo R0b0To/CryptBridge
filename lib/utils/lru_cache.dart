@@ -12,8 +12,10 @@ class LruCache<K, V> {
 
   /// Returns the value for [key], promoting it to most-recent, or null if absent.
   V? operator [](K key) {
-    final val = _map.remove(key);
-    if (val != null) _map[key] = val; // re-insert at tail (= most recent)
+    if (!_map.containsKey(key)) return null;
+    // Remove and re-insert to promote to tail (most-recent).
+    final val = _map.remove(key) as V;
+    _map[key] = val;
     return val;
   }
 
@@ -34,4 +36,3 @@ class LruCache<K, V> {
 
   int get length => _map.length;
 }
-

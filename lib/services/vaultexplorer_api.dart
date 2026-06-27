@@ -10,24 +10,47 @@ class VaultExplorerApi {
 
   static const _channel = MethodChannel('com.aeidolon.vaultexplorer/engine');
 
-  // ── Batch operation tracking ───────────────────────────────
-  //
-  // The auto-close timer in VaultDashboard checks this set before locking.
-  // Any multi-step operation (e.g. cross-container paste) should call
-  // beginBatch/endBatch so the timer defers instead of racing mid-write.
-  static final Set<int> _activeBatches = {};
 
-  void beginBatch(int volId) => _activeBatches.add(volId);
-  void endBatch(int volId)   => _activeBatches.remove(volId);
+  static final Set<int> _activeBatches = {};
+  static final Set<int> _lockPending   = {};
+
+  void beginBatch(int volId) {
+    _activeBatches.add(volId);
+  }
+
+  void endBatch(int volId) {
+    _activeBatches.remove(volId);
+  }
+
   bool hasActiveBatch(int volId) => _activeBatches.contains(volId);
 
-  // ── Crypto ────────────────────────────────────────────────────────────────
+  /// Attempts to acquire the lock guard for [volId].
+  ///
+  /// Returns `true` if:
+  /// - No batch is active for [volId], AND
+  /// - No lock is already pending for [volId].
+  ///
+  /// If this returns `true` the caller MUST call [releaseLockGuard] after
+  /// the lock operation completes (success or failure).
 
-  /// PBKDF2-SHA512 via the C++ mbedTLS layer
+  bool acquireLockGuard(int volId) {
+    if (_activeBatches.contains(volId) || _lockPending.contains(volId)) {
+      return false;
+    }
+    _lockPending.add(volId);
+    return true;
+  }
+
+  void releaseLockGuard(int volId) {
+    _lockPending.remove(volId);
+  }
+
+  // ── Crypto ─────────────────────────────────────────────────────────────────
+
+  /// PBKDF2-SHA512 via the C++ mbedTLS layer.
   ///
   /// Returns 64 raw bytes of derived key, or null on failure.
   /// [salt] must be non-empty (16 bytes recommended).
-  /// [iterations] defaults to 200 000 if <= 0 on the native side.
   Future<Uint8List?> hashPassword({
     required String password,
     required Uint8List salt,
@@ -261,6 +284,8 @@ class VaultExplorerApi {
     return result ?? 0;
   }
 
+  /// Requests a scaled video thumbnail from the native layer.
+  /// Returns null on any error — callers should show a fallback icon.
   Future<Uint8List?> getVideoThumbnail(
       MountedContainer container, String fileName) async {
     try {

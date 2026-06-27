@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/vaultexplorer_api.dart';
-import '../../services/saved_containers.dart';
+import '../../services/container_repository.dart';
 import '../../models/mounted_container.dart';
 import '../../utils/validation_utils.dart';
 
@@ -44,9 +44,9 @@ class _UnlockSheetState extends State<UnlockSheet> {
     super.initState();
     _passwordCtrl = TextEditingController(text: widget.prefillPassword ?? '');
     if (widget.initialUri != null) {
-      _selectedUri = widget.initialUri;
+      _selectedUri  = widget.initialUri;
       _selectedName = widget.initialName;
-      _remember = true;
+      _remember     = true;
     }
   }
 
@@ -63,9 +63,9 @@ class _UnlockSheetState extends State<UnlockSheet> {
       final result = await vaultExplorerApi.pickContainer();
       if (result != null) {
         setState(() {
-          _selectedUri = result.uri;
+          _selectedUri  = result.uri;
           _selectedName = result.displayName;
-          _error = null;
+          _error        = null;
         });
       }
     } catch (e) {
@@ -74,12 +74,19 @@ class _UnlockSheetState extends State<UnlockSheet> {
   }
 
   Future<void> _unlock() async {
-    if (_selectedUri == null) { setState(() => _error = 'Select a container first'); return; }
-    if (_passwordCtrl.text.isEmpty) { setState(() => _error = 'Password is required'); return; }
+    if (_selectedUri == null) {
+      setState(() => _error = 'Select a container first');
+      return;
+    }
+    if (_passwordCtrl.text.isEmpty) {
+      setState(() => _error = 'Password is required');
+      return;
+    }
     setState(() { _loading = true; _error = null; });
 
     try {
-      final pim = clampPim(_pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0);
+      final pim  = clampPim(
+          _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0);
       final name = _selectedName ?? 'Container';
 
       final result = await vaultExplorerApi.unlockContainer(
@@ -91,8 +98,14 @@ class _UnlockSheetState extends State<UnlockSheet> {
       );
 
       if (result != null) {
+
         if (_remember && widget.initialUri == null) {
-          await SavedContainerService.saveContainer(_selectedUri!, name);
+          final record = ContainerRecord(
+            uri: _selectedUri!,
+            label: name,
+            rememberPassword: false,
+          );
+          await ContainerRepository.instance.save(record);
         }
 
         final tempContainer = MountedContainer(
@@ -121,11 +134,11 @@ class _UnlockSheetState extends State<UnlockSheet> {
 
         HapticFeedback.lightImpact();
 
-        TextInput.finishAutofillContext(shouldSave: true);
+        TextInput.finishAutofillContext(shouldSave: false);
 
         if (mounted) Navigator.pop(context);
       } else {
-        setState(() => _error ='Incorrect password or invalid container');
+        setState(() => _error = 'Incorrect password or invalid container');
       }
     } on PlatformException catch (e) {
       setState(() => _error = e.message ?? 'Unknown error');
@@ -136,174 +149,198 @@ class _UnlockSheetState extends State<UnlockSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs        = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final mq = MediaQuery.of(context);
+    final mq        = MediaQuery.of(context);
 
-    // Let the framework-drawn BottomSheet handle the background, corners, and drag handle.
-    // We only apply keyboard offset padding here.
     return Padding(
       padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
       child: SafeArea(
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-          child: AutofillGroup(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                Text(
+                  widget.initialUri != null
+                      ? 'Unlock Container'
+                      : 'Mount Container',
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 16),
+
+              // File picker
+              GestureDetector(
+                onTap: _pickFile,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _selectedUri != null
+                          ? cs.primary
+                          : cs.outlineVariant,
+                      width: _selectedUri != null ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(children: [
+                    Icon(
+                      _selectedUri != null
+                          ? Icons.description_outlined
+                          : Icons.folder_open_rounded,
+                      size: 20,
+                      color: _selectedUri != null
+                          ? cs.primary
+                          : cs.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _selectedName ?? 'Select VeraCrypt container…',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: _selectedUri != null
+                              ? cs.onSurface
+                              : cs.onSurfaceVariant,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_selectedUri != null &&
+                        widget.initialUri == null) ...[
+                      GestureDetector(
+                        onTap: () => setState(
+                            () { _selectedUri = null; _selectedName = null; }),
+                        child: Icon(Icons.clear_rounded,
+                            size: 18, color: cs.onSurfaceVariant),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(Icons.check_circle_rounded,
+                          size: 18, color: cs.primary),
+                    ] else if (_selectedUri != null &&
+                        widget.initialUri != null) ...[
+                      Icon(Icons.lock_outline_rounded,
+                          size: 18, color: cs.primary),
+                    ],
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              TextField(
+                controller: _passwordCtrl,
+                obscureText: _obscure,
+                autofocus: widget.initialUri != null &&
+                    widget.prefillPassword?.isEmpty != false,
+                onChanged: (_) => setState(() {}),
+                keyboardType: TextInputType.visiblePassword,
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: const Icon(Icons.key_outlined, size: 18),
+                  suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (_passwordPrefilled)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Tooltip(
+                          message: 'Using saved password',
+                          child: Icon(Icons.bookmark_rounded,
+                              size: 18, color: cs.primary),
+                        ),
+                      ),
+                    IconButton(
+                      onPressed: () =>
+                          setState(() => _obscure = !_obscure),
+                      icon: Icon(
+                          _obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 18),
+                    ),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              TextField(
+                controller: _pimCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'PIM  (leave blank for default)',
+                  prefixIcon: Icon(Icons.tune_rounded, size: 18),
+                ),
+              ),
+
+              if (widget.initialUri == null) ...[
+                const SizedBox(height: 10),
                 Row(children: [
-                  Text(
-                    widget.initialUri != null ? 'Unlock Container' : 'Mount Container',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                  Checkbox(
+                    value: _remember,
+                    onChanged: (val) =>
+                        setState(() => _remember = val ?? false),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    onTap: () => setState(() => _remember = !_remember),
+                    child: Text(
+                      'Remember container on dashboard',
+                      style: textTheme.bodyMedium,
                     ),
                   ),
                 ]),
-                const SizedBox(height: 16),
+              ],
 
-                // File picker container
-                GestureDetector(
-                  onTap: _pickFile,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _selectedUri != null ? cs.primary : cs.outlineVariant,
-                        width: _selectedUri != null ? 1.5 : 1,
-                      ),
-                    ),
-                    child: Row(children: [
-                      Icon(
-                        _selectedUri != null ? Icons.description_outlined : Icons.folder_open_rounded,
-                        size: 20,
-                        color: _selectedUri != null ? cs.primary : cs.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _selectedName ?? 'Select VeraCrypt container…',
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: _selectedUri != null ? cs.onSurface : cs.onSurfaceVariant,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (_selectedUri != null && widget.initialUri == null) ...[
-                        GestureDetector(
-                          onTap: () => setState(() { _selectedUri = null; _selectedName = null; }),
-                          child: Icon(Icons.clear_rounded, size: 18, color: cs.onSurfaceVariant),
-                        ),
-                        const SizedBox(width: 8),
-                        Icon(Icons.check_circle_rounded, size: 18, color: cs.primary),
-                      ] else if (_selectedUri != null && widget.initialUri != null) ...[
-                        Icon(Icons.lock_outline_rounded, size: 18, color: cs.primary),
-                      ],
-                    ]),
+              if (_error != null) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: cs.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-                const SizedBox(height: 16),
-
-                TextField(
-                  controller: _passwordCtrl,
-                  obscureText: _obscure,
-                  autofocus: widget.initialUri != null && widget.prefillPassword?.isEmpty != false,
-                  onChanged: (_) => setState(() {}),
-                  keyboardType: TextInputType.visiblePassword,
-                  autofillHints: const [AutofillHints.password],
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    prefixIcon: const Icon(Icons.key_outlined, size: 18),
-                    suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
-                      if (_passwordPrefilled)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: Tooltip(
-                            message: 'Using saved password',
-                            child: Icon(Icons.bookmark_rounded, size: 18, color: cs.primary),
-                          ),
-                        ),
-                      IconButton(
-                        onPressed: () => setState(() => _obscure = !_obscure),
-                        icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18),
-                      ),
-                    ]),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                TextField(
-                  controller: _pimCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'PIM  (leave blank for default)',
-                    prefixIcon: Icon(Icons.tune_rounded, size: 18),
-                  ),
-                ),
-
-                if (widget.initialUri == null) ...[
-                  const SizedBox(height: 10),
-                  Row(children: [
-                    Checkbox(
-                      value: _remember,
-                      onChanged: (val) => setState(() => _remember = val ?? false),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
+                  child: Row(children: [
+                    Icon(Icons.error_outline_rounded,
+                        size: 20, color: cs.onErrorContainer),
                     const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: () => setState(() => _remember = !_remember),
+                    Expanded(
                       child: Text(
-                        'Remember container on dashboard',
-                        style: textTheme.bodyMedium,
+                        _error!,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: cs.onErrorContainer,
+                        ),
                       ),
                     ),
                   ]),
-                ],
-
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: cs.errorContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(children: [
-                      Icon(Icons.error_outline_rounded, size: 20, color: cs.onErrorContainer),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _error!, 
-                          style: textTheme.bodySmall?.copyWith(
-                            color: cs.onErrorContainer,
-                          ),
-                        ),
-                      ),
-                    ]),
-                  ),
-                ],
-
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: _loading ? null : _unlock,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                  child: _loading
-                      ? SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation(cs.onPrimary),
-                          ),
-                        )
-                      : const Text('Unlock'),
                 ),
               ],
-            ),
+
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _loading ? null : _unlock,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+                child: _loading
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor:
+                              AlwaysStoppedAnimation(cs.onPrimary),
+                        ),
+                      )
+                    : const Text('Unlock'),
+              ),
+            ],
           ),
         ),
       ),

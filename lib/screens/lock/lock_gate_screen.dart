@@ -57,15 +57,18 @@ class _LockGateScreenState extends State<LockGateScreen> {
 
   Future<void> _tryBiometric() async {
     try {
-      final canCheck   = await _localAuth.canCheckBiometrics;
+      final canCheck    = await _localAuth.canCheckBiometrics;
       final isSupported = await _localAuth.isDeviceSupported();
       if (!canCheck || !isSupported) {
-        if (mounted) setState(() => _error = 'Biometric not available on this device');
+        if (mounted) {
+          setState(() => _error = 'Biometric not available on this device');
+        }
         return;
       }
       final ok = await _localAuth.authenticate(
         localizedReason: 'Unlock VaultExplorer',
-        options: const AuthenticationOptions(biometricOnly: false, stickyAuth: true),
+        options: const AuthenticationOptions(
+            biometricOnly: false, stickyAuth: true),
       );
       if (ok && mounted) _goToDashboard();
     } on PlatformException catch (e) {
@@ -73,7 +76,7 @@ class _LockGateScreenState extends State<LockGateScreen> {
     }
   }
 
-  // FIX: now async — checkPassword calls PBKDF2 via the C++ layer.
+
   Future<void> _checkPassword() async {
     final s = _settings;
     if (s == null) return;
@@ -84,8 +87,7 @@ class _LockGateScreenState extends State<LockGateScreen> {
     }
     setState(() { _checking = true; _error = null; });
 
-    // Small delay so the loading indicator renders before the PBKDF2 call
-    // consumes the thread for ~100 ms.
+    // Small delay so the loading indicator renders before any blocking work.
     await Future<void>.delayed(const Duration(milliseconds: 80));
     if (!mounted) return;
 
@@ -93,8 +95,6 @@ class _LockGateScreenState extends State<LockGateScreen> {
     if (!mounted) return;
 
     if (ok) {
-      // FIX: silently upgrade legacy 32-bit hash to PBKDF2-SHA512 on first
-      // successful login so the user is not locked out during the transition.
       if (s.needsHashUpgrade) {
         _upgradeMasterPasswordHashInBackground(s, pw);
       }
@@ -106,14 +106,12 @@ class _LockGateScreenState extends State<LockGateScreen> {
     }
   }
 
-  /// Runs the PBKDF2 key-derivation and persists the upgraded hash in the
-  /// background so it doesn't block navigation.  Non-fatal on failure —
-  /// the user will be prompted again on the next launch.
+  /// Runs PBKDF2 key-derivation and persists the upgraded hash to Keystore
+  /// in the background so it doesn't block navigation.
+  /// Non-fatal on failure — the user will use the legacy path again next launch.
   void _upgradeMasterPasswordHashInBackground(AppSettings s, String pw) {
     AppSettings.derivePasswordHash(pw).then((hashSalt) async {
-      s.masterPasswordHash = hashSalt.$1;
-      s.masterPasswordSalt = hashSalt.$2;
-      await AppSettingsService.saveSettings(s);
+      await AppSettingsService.saveMasterPassword(s, hashSalt.$1, hashSalt.$2);
     }).catchError((_) {});
   }
 
@@ -150,18 +148,20 @@ class _LockGateScreenState extends State<LockGateScreen> {
                     color: cs.primaryContainer,
                     border: Border.all(color: cs.outlineVariant),
                   ),
-                  child: Icon(Icons.lock_outline_rounded, size: 32, color: cs.primary),
+                  child: Icon(Icons.lock_outline_rounded,
+                      size: 32, color: cs.primary),
                 ),
                 const SizedBox(height: 28),
                 Text(
                   'VaultExplorer',
                   style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold, letterSpacing: -0.2),
+                      fontWeight: FontWeight.bold, letterSpacing: -0.2),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Enter your master password to continue',
-                  style: textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                  style: textTheme.bodyMedium
+                      ?.copyWith(color: cs.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 36),
@@ -169,6 +169,9 @@ class _LockGateScreenState extends State<LockGateScreen> {
                   controller: _pwCtrl,
                   obscureText: _obscure,
                   autofocus: !s.masterPasswordIsFingerprint,
+                  // SEC-07 fix: master password must not be offered to
+                  // third-party autofill services.
+                  autofillHints: null,
                   onSubmitted: (_) => _checkPassword(),
                   decoration: InputDecoration(
                     labelText: 'Master Password',
@@ -179,7 +182,8 @@ class _LockGateScreenState extends State<LockGateScreen> {
                               ? Icons.visibility_outlined
                               : Icons.visibility_off_outlined,
                           size: 18),
-                      onPressed: () => setState(() => _obscure = !_obscure),
+                      onPressed: () =>
+                          setState(() => _obscure = !_obscure),
                     ),
                   ),
                 ),

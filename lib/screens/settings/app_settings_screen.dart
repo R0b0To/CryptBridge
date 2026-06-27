@@ -68,8 +68,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     setState(() {
       _settings.useMasterPassword = enabled;
       if (!enabled) {
-        _settings.masterPasswordHash = null;
-        _settings.masterPasswordSalt = null;
+        AppSettingsService.clearMasterPassword(_settings);
         _settings.masterPasswordIsFingerprint = false;
         _showPwFields = false;
         _pwCtrl.clear();
@@ -81,7 +80,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     });
   }
 
-  // FIX: now async — calls PBKDF2-SHA512 via the C++ layer.
+  /// Derives PBKDF2-SHA512 and persists hash to Android Keystore.
   Future<void> _confirmPassword() async {
     final pw      = _pwCtrl.text;
     final confirm = _pwConfirmCtrl.text;
@@ -103,15 +102,21 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     try {
       final (hash, salt) = await AppSettings.derivePasswordHash(pw);
       if (!mounted) return;
+
+      await AppSettingsService.saveMasterPassword(_settings, hash, salt);
+
       setState(() {
-        _settings.masterPasswordHash = hash;
-        _settings.masterPasswordSalt = salt;
         _showPwFields = false;
         _pwCtrl.clear();
         _pwConfirmCtrl.clear();
         _saving = false;
       });
-      _save();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Master password set')),
+        );
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -137,10 +142,12 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
               child: _saving
                   ? SizedBox(
                       width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2.5, color: cs.primary),
+                      child: CircularProgressIndicator(strokeWidth: 2.5,
+                          color: cs.primary),
                     )
                   : Text('Save',
-                      style: TextStyle(color: cs.primary, fontWeight: FontWeight.bold)),
+                      style: TextStyle(color: cs.primary,
+                          fontWeight: FontWeight.bold)),
             ),
           const SizedBox(width: 8),
         ],
@@ -172,6 +179,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                     TextField(
                       controller: _pwCtrl,
                       obscureText: _obscurePw,
+                      autofillHints: null,
                       decoration: InputDecoration(
                         labelText: _settings.masterPasswordHash != null
                             ? 'New password'
@@ -192,6 +200,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                     TextField(
                       controller: _pwConfirmCtrl,
                       obscureText: _obscureConfirm,
+                      autofillHints: null,
                       decoration: InputDecoration(
                         labelText: 'Confirm password',
                         prefixIcon: const Icon(Icons.password_rounded, size: 18),
@@ -202,14 +211,16 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                                   : Icons.visibility_off_outlined,
                               size: 18),
                           onPressed: () =>
-                              setState(() => _obscureConfirm = !_obscureConfirm),
+                              setState(
+                                  () => _obscureConfirm = !_obscureConfirm),
                         ),
                       ),
                     ),
                     if (_pwError != null) ...[
                       const SizedBox(height: 10),
                       Text(_pwError!,
-                          style: textTheme.bodySmall?.copyWith(color: cs.error)),
+                          style: textTheme.bodySmall
+                              ?.copyWith(color: cs.error)),
                     ],
                     const SizedBox(height: 16),
                     Row(children: [
@@ -226,7 +237,8 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                                       _settings.useMasterPassword = false;
                                     }
                                   }),
-                          style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+                          style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(0, 40)),
                           child: const Text('Cancel'),
                         ),
                       ),
@@ -234,11 +246,14 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                       Expanded(
                         child: FilledButton(
                           onPressed: _saving ? null : _confirmPassword,
-                          style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
+                          style: FilledButton.styleFrom(
+                              minimumSize: const Size(0, 40)),
                           child: _saving
                               ? const SizedBox(
-                                  width: 16, height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2))
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2))
                               : Text(_settings.masterPasswordHash != null
                                   ? 'Update'
                                   : 'Set Password'),
@@ -274,8 +289,8 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
                     const SizedBox(height: 12),
                     TextButton.icon(
-                      onPressed: () =>
-                          setState(() { _showPwFields = true; _pwError = null; }),
+                      onPressed: () => setState(
+                          () { _showPwFields = true; _pwError = null; }),
                       icon: const Icon(Icons.edit_rounded, size: 16),
                       label: const Text('Change password'),
                     ),
@@ -291,7 +306,8 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                     icon: Icons.folder_shared_rounded,
                     title: 'Document Provider (default)',
                     subtitle:
-                        'New containers will be exposed in Android\'s file picker by default.',
+                        'New containers will be exposed in Android\'s file '
+                        'picker by default.',
                     value: _settings.defaultDocumentProvider,
                     cs: cs,
                     onChanged: (v) =>
@@ -304,13 +320,13 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 _SectionLabel('ABOUT', cs),
                 const SizedBox(height: 8),
                 _Card(cs: cs, children: [
-                  _InfoRow('Version', '0.8.7', cs),
+                  _InfoRow('Version',        '0.8.7',                  cs),
                   const Divider(),
-                  _InfoRow('Encryption', 'AES-256-XTS (VeraCrypt)', cs),
+                  _InfoRow('Encryption',     'AES-256-XTS (VeraCrypt)', cs),
                   const Divider(),
-                  _InfoRow('Key derivation', 'PBKDF2-SHA512', cs),
+                  _InfoRow('Key derivation', 'PBKDF2-SHA512',           cs),
                   const Divider(),
-                  _InfoRow('Filesystem', 'FAT32 / exFAT via FatFs', cs),
+                  _InfoRow('Filesystem',     'FAT32 / exFAT via FatFs', cs),
                 ]),
 
                 const SizedBox(height: 32),
@@ -355,7 +371,8 @@ class _Card extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children),
         ),
       );
 }
@@ -425,10 +442,12 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         children: [
           Text(label,
-              style: textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+              style: textTheme.bodyMedium
+                  ?.copyWith(color: cs.onSurfaceVariant)),
           const Spacer(),
           Text(value,
-              style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+              style: textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w500)),
         ],
       ),
     );

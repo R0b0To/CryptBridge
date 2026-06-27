@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
-import '../../../services/app_settings_service.dart';
+import '../../../services/container_repository.dart';
 
 class ContainerConfigSheet extends StatefulWidget {
   final String uri;
   final String currentLabel;
-  final ContainerConfig? existingConfig;
-  final void Function(ContainerConfig config) onSaved;
+  final ContainerRecord? existingRecord;
+  final void Function(ContainerRecord record) onSaved;
   final VoidCallback? onForget;
 
   const ContainerConfigSheet({
     Key? key,
     required this.uri,
     required this.currentLabel,
-    this.existingConfig,
+    this.existingRecord,
     required this.onSaved,
     this.onForget,
   }) : super(key: key);
@@ -26,7 +26,7 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
   late TextEditingController _passwordCtrl;
   late bool _rememberPassword;
   late bool _showPassword;
-  late int _autoCloseMins;
+  late int  _autoCloseMins;
   late bool _documentProvider;
   bool _saving          = false;
   bool _loadingPassword = true;
@@ -36,20 +36,21 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
   @override
   void initState() {
     super.initState();
-    final cfg       = widget.existingConfig;
+    final rec       = widget.existingRecord;
     _labelCtrl      = TextEditingController(
-        text: cfg?.label.isNotEmpty == true ? cfg!.label : widget.currentLabel);
+        text: rec?.label.isNotEmpty == true ? rec!.label : widget.currentLabel);
     _passwordCtrl   = TextEditingController();
-    _rememberPassword = cfg?.rememberPassword ?? false;
+    _rememberPassword = rec?.rememberPassword ?? false;
     _showPassword   = false;
-    _autoCloseMins  = cfg?.autoCloseMins ?? 0;
-    _documentProvider = cfg?.documentProvider ?? false;
+    _autoCloseMins  = rec?.autoCloseMins ?? 0;
+    _documentProvider = rec?.documentProvider ?? false;
     _loadSavedPassword();
   }
 
   Future<void> _loadSavedPassword() async {
-    if (widget.existingConfig?.rememberPassword == true) {
-      final plain = await widget.existingConfig!.getPassword();
+    if (widget.existingRecord?.rememberPassword == true) {
+      final plain =
+          await ContainerRepository.instance.getPassword(widget.uri);
       if (mounted) _passwordCtrl.text = plain ?? '';
     }
     if (mounted) setState(() => _loadingPassword = false);
@@ -64,23 +65,28 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    final config = ContainerConfig(
+
+    final label = _labelCtrl.text.trim().isEmpty
+        ? widget.currentLabel
+        : _labelCtrl.text.trim();
+
+    // Build the record. pendingPassword is set only when the user has
+    // explicitly entered/changed a password with rememberPassword enabled.
+    final record = ContainerRecord(
       uri: widget.uri,
-      label: _labelCtrl.text.trim().isEmpty
-          ? widget.currentLabel
-          : _labelCtrl.text.trim(),
+      label: label,
       rememberPassword: _rememberPassword,
       autoCloseMins: _autoCloseMins,
       documentProvider: _documentProvider,
+      pendingPassword: _rememberPassword && _passwordCtrl.text.isNotEmpty
+          ? _passwordCtrl.text
+          : null,
     );
-    if (_rememberPassword && _passwordCtrl.text.isNotEmpty) {
-      await config.setPassword(_passwordCtrl.text);
-    } else if (!_rememberPassword) {
-      // Clear any previously stored password when the user turns off remembering.
-      await config.clearPassword();
-    }
-    await AppSettingsService.saveContainerConfig(config);
-    widget.onSaved(config);
+
+    // ContainerRepository.save handles Keystore write/delete atomically.
+    await ContainerRepository.instance.save(record);
+
+    widget.onSaved(record);
     if (mounted) Navigator.pop(context);
   }
 
@@ -110,7 +116,7 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 ]),
                 const SizedBox(height: 20),
 
-                // ── Label ──────────────────────────────────────────────────
+                // ── Label ───────────────────────────────────────────────────
                 TextField(
                   controller: _labelCtrl,
                   decoration: const InputDecoration(
@@ -122,13 +128,12 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 ),
                 const SizedBox(height: 16),
 
-                // ── Password ───────────────────────────────────────────────
+                // ── Password ────────────────────────────────────────────────
                 _SectionHeader('PASSWORD', cs),
                 const SizedBox(height: 10),
                 _ToggleRow(
                   icon: Icons.key_rounded,
                   title: 'Remember password',
-                  // FIX: updated subtitle to reflect Android Keystore storage.
                   subtitle: 'Stored securely in Android Keystore',
                   value: _rememberPassword,
                   cs: cs,
@@ -149,6 +154,8 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                     TextField(
                       controller: _passwordCtrl,
                       obscureText: !_showPassword,
+                      // SEC-07 fix: no autofill hints for container passwords.
+                      autofillHints: null,
                       decoration: InputDecoration(
                         labelText: 'Container password',
                         prefixIcon: const Icon(Icons.lock_rounded, size: 18),
@@ -171,9 +178,8 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        // FIX: accurate security description after Keystore migration.
                         'Password is encrypted with a device-bound key in Android '
-                        'Keystore.  It is protected even if the APK is extracted, '
+                        'Keystore. It is protected even if the APK is extracted, '
                         'but not if the device is rooted and the Keystore is bypassed.',
                         style: textTheme.bodySmall
                             ?.copyWith(color: cs.onSurfaceVariant),
@@ -183,7 +189,7 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 ],
                 const SizedBox(height: 16),
 
-                // ── Auto-lock ──────────────────────────────────────────────
+                // ── Auto-lock ───────────────────────────────────────────────
                 _SectionHeader('AUTO-LOCK', cs),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<int>(
@@ -206,7 +212,7 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 ),
                 const SizedBox(height: 16),
 
-                // ── Document Provider ──────────────────────────────────────
+                // ── Document Provider ───────────────────────────────────────
                 _SectionHeader('ANDROID INTEGRATION', cs),
                 const SizedBox(height: 10),
                 _ToggleRow(
@@ -222,7 +228,6 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 ),
                 const SizedBox(height: 24),
 
-                // ── Remove from dashboard ─────────────────────────────────
                 if (widget.onForget != null) ...[
                   TextButton.icon(
                     onPressed: () {
@@ -238,7 +243,6 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                   const SizedBox(height: 12),
                 ],
 
-                // ── Save ───────────────────────────────────────────────────
                 FilledButton(
                   onPressed: _saving ? null : _save,
                   style: FilledButton.styleFrom(
@@ -260,6 +264,8 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
     );
   }
 }
+
+// ── Sub-widgets ───────────────────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
   final String label;

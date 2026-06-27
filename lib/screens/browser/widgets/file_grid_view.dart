@@ -8,15 +8,18 @@ import '../../../utils/file_type_utils.dart';
 import '../../../utils/format_utils.dart';
 import '../../../utils/lru_cache.dart';
 
-/// A dynamic gallery grid for the file browser supporting pinch-to-zoom column sizes.
+/// Maximum bytes read from an image file for thumbnail generation.
+/// PERF-02 fix: prevents loading a 20 MB RAW photo into RAM just to show a
+/// 180 px grid cell. Flutter's image decoder will handle downscaling.
+const int _kThumbReadLimit = 512 * 1024; // 512 KB
+
+/// A dynamic gallery grid for the file browser supporting pinch-to-zoom.
 class FileGridView extends StatefulWidget {
   final MountedContainer container;
   final List<String> dirs;
   final List<String> files;
   final bool isSelectionMode;
   final Set<String> selectedItems;
-
-  /// FAT path of the current directory (empty string at root).
   final String currentDirPath;
 
   final ValueChanged<String> onDirTap;
@@ -61,17 +64,12 @@ class _FileGridViewState extends State<FileGridView> {
     return _videoExts.contains(name.substring(dot + 1).toLowerCase());
   }
 
-  /// Calculates dynamic aspect ratios so cards retain proper proportions 
-  /// across 1, 2, and 3 column modes.
   double _getAspectRatio(int columns) {
     switch (columns) {
-      case 1:
-        return 1.45; // Landscape card
-      case 2:
-        return 0.95; // Square-ish card
+      case 1:  return 1.45;
+      case 2:  return 0.95;
       case 3:
-      default:
-        return 0.74; // Compact vertical card
+      default: return 0.74;
     }
   }
 
@@ -80,24 +78,21 @@ class _FileGridViewState extends State<FileGridView> {
   }
 
   void _handleScaleUpdate(ScaleUpdateDetails details) {
-    final scale = details.scale;
+    final scale  = details.scale;
     final factor = scale / _baselineScale;
 
-    // Fingers moving apart -> Make cards bigger (fewer columns)
     if (factor > 1.35) {
       if (_crossAxisCount > 1) {
         setState(() {
           _crossAxisCount--;
-          _baselineScale = scale; // Reset baseline for step-by-step feedback
+          _baselineScale = scale;
         });
       }
-    } 
-    // Fingers moving together -> Make cards smaller (more columns)
-    else if (factor < 0.75) {
+    } else if (factor < 0.75) {
       if (_crossAxisCount < 3) {
         setState(() {
           _crossAxisCount++;
-          _baselineScale = scale; // Reset baseline
+          _baselineScale = scale;
         });
       }
     }
@@ -106,7 +101,7 @@ class _FileGridViewState extends State<FileGridView> {
   @override
   Widget build(BuildContext context) {
     final total = widget.dirs.length + widget.files.length;
-    
+
     return GestureDetector(
       onScaleStart: _handleScaleStart,
       onScaleUpdate: _handleScaleUpdate,
@@ -123,7 +118,8 @@ class _FileGridViewState extends State<FileGridView> {
           if (index < widget.dirs.length) {
             return _buildDirCell(context, widget.dirs[index]);
           }
-          return _buildFileCell(context, widget.files[index - widget.dirs.length]);
+          return _buildFileCell(
+              context, widget.files[index - widget.dirs.length]);
         },
       ),
     );
@@ -133,7 +129,7 @@ class _FileGridViewState extends State<FileGridView> {
     final name       = rawItem.replaceFirst('[DIR] ', '');
     final isSelected = widget.selectedItems.contains(rawItem);
     final cs         = Theme.of(context).colorScheme;
-    
+
     return _GridCell(
       isSelected: isSelected,
       isSelectionMode: widget.isSelectionMode,
@@ -141,7 +137,7 @@ class _FileGridViewState extends State<FileGridView> {
       onLongPress: () => widget.onItemLongPress(rawItem),
       preview: Center(
         child: Icon(
-          Icons.folder_rounded, 
+          Icons.folder_rounded,
           size: _crossAxisCount == 1 ? 72 : 56,
           color: isSelected ? cs.primary : cs.secondary,
         ),
@@ -151,11 +147,12 @@ class _FileGridViewState extends State<FileGridView> {
   }
 
   Widget _buildFileCell(BuildContext context, String rawItem) {
-    final parts    = rawItem.split('|');
+    final parts     = rawItem.split('|');
     final cleanName = parts.first;
     final fileSize  = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-    final fullPath  =
-        widget.currentDirPath.isEmpty ? cleanName : '${widget.currentDirPath}/$cleanName';
+    final fullPath  = widget.currentDirPath.isEmpty
+        ? cleanName
+        : '${widget.currentDirPath}/$cleanName';
     final isSelected = widget.selectedItems.contains(rawItem);
 
     final isImg = _isImage(cleanName);
@@ -171,8 +168,8 @@ class _FileGridViewState extends State<FileGridView> {
     } else {
       previewWidget = Center(
         child: Icon(
-          iconForFile(cleanName), 
-          size: _crossAxisCount == 1 ? 52 : 40, 
+          iconForFile(cleanName),
+          size: _crossAxisCount == 1 ? 52 : 40,
           color: colorForFile(cleanName),
         ),
       );
@@ -183,7 +180,9 @@ class _FileGridViewState extends State<FileGridView> {
       isSelectionMode: widget.isSelectionMode,
       onTap: () => widget.onFileTap(rawItem),
       onLongPress: () => widget.onItemLongPress(rawItem),
-      onMoreTap: widget.isSelectionMode ? null : () => widget.onFileLongMenu?.call(rawItem),
+      onMoreTap: widget.isSelectionMode
+          ? null
+          : () => widget.onFileLongMenu?.call(rawItem),
       preview: previewWidget,
       label: cleanName,
       sublabel: fileSize > 0 ? formatBytes(fileSize) : null,
@@ -255,7 +254,8 @@ class _GridCell extends StatelessWidget {
                           child: Padding(
                             padding: const EdgeInsets.all(6),
                             child: _CheckBadge(
-                                color: cs.primary, onColor: cs.onPrimary),
+                                color: cs.primary,
+                                onColor: cs.onPrimary),
                           ),
                         ),
                       ),
@@ -275,7 +275,8 @@ class _GridCell extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w600, color: cs.onSurface)),
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSurface)),
                     if (sublabel != null) ...[
                       const SizedBox(height: 2),
                       Text(sublabel!,
@@ -307,10 +308,166 @@ class _CheckBadge extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Encrypted image thumbnail loader
-// ─────────────────────────────────────────────────────────────────────────────
 
-class _EncryptedImageGridThumb extends StatefulWidget {
+typedef _FetchFn = Future<Uint8List> Function(
+    MountedContainer container, String filePath);
+
+/// A stateful thumbnail loader that handles debouncing, concurrency limiting,
+/// LRU caching, and widget recycling cancellation generically.
+class _AsyncThumb extends StatefulWidget {
+  final MountedContainer container;
+  final String filePath;
+  final LruCache<String, Future<Uint8List>> cache;
+  final ConcurrencyLimiter limiter;
+  final _FetchFn fetchFn;
+  final Duration debounce;
+
+  const _AsyncThumb({
+    required Key key,
+    required this.container,
+    required this.filePath,
+    required this.cache,
+    required this.limiter,
+    required this.fetchFn,
+    this.debounce = const Duration(milliseconds: 100),
+  }) : super(key: key);
+
+  @override
+  State<_AsyncThumb> createState() => _AsyncThumbState();
+}
+
+class _AsyncThumbState extends State<_AsyncThumb> {
+  Uint8List? _bytes;
+  bool _isLoading = true;
+  bool _hasError  = false;
+
+  Completer<void>? _limiterCompleter;
+  String? _loadingPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_AsyncThumb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.filePath != widget.filePath) {
+      _cancel();
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _cancel();
+    super.dispose();
+  }
+
+  void _cancel() {
+    if (_limiterCompleter != null) {
+      widget.limiter.cancel(_limiterCompleter!);
+      _limiterCompleter = null;
+    }
+    _loadingPath = null;
+  }
+
+  Future<void> _load() async {
+    final targetPath = widget.filePath;
+    _loadingPath     = targetPath;
+    final cacheKey   = '${widget.container.volId}:$targetPath';
+
+    var future = widget.cache[cacheKey];
+
+    if (future == null) {
+      if (mounted) {
+        setState(() { _isLoading = true; _hasError = false; });
+      }
+
+      await Future.delayed(widget.debounce);
+      if (targetPath != _loadingPath || !mounted) return;
+
+      future = widget.cache[cacheKey];
+      if (future == null) {
+        future = _fetchWithQueue(widget.container, targetPath);
+        widget.cache[cacheKey] = future;
+      }
+    }
+
+    try {
+      final data = await future;
+      if (targetPath != _loadingPath || !mounted) return;
+      setState(() { _bytes = data; _isLoading = false; });
+    } catch (_) {
+      if (targetPath == _loadingPath) {
+        widget.cache.remove(cacheKey);
+        if (mounted) {
+          setState(() { _isLoading = false; _hasError = true; });
+        }
+      }
+    }
+  }
+
+  Future<Uint8List> _fetchWithQueue(
+      MountedContainer container, String targetPath) async {
+    final completer  = Completer<void>();
+    _limiterCompleter = completer;
+    bool acquired    = false;
+
+    try {
+      await widget.limiter.acquire(completer);
+      acquired = true;
+
+      if (targetPath != _loadingPath || !mounted) {
+        throw Exception('Cancelled before processing');
+      }
+
+      return await widget.fetchFn(container, targetPath);
+    } finally {
+      if (_limiterCompleter == completer) _limiterCompleter = null;
+      if (acquired) widget.limiter.release();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    if (_isLoading) {
+      return Container(
+        color: cs.surfaceContainerLow,
+        child: Center(
+          child: SizedBox(
+            width: 18, height: 18,
+            child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                color: cs.primary.withOpacity(0.6)),
+          ),
+        ),
+      );
+    }
+    if (_hasError || _bytes == null || _bytes!.isEmpty) {
+      return _errorPlaceholder(cs);
+    }
+    return Image.memory(_bytes!, fit: BoxFit.cover, cacheHeight: 180);
+  }
+
+  Widget _errorPlaceholder(ColorScheme cs) => Container(
+        color: cs.surfaceContainerLow,
+        child: Center(
+            child: Icon(Icons.broken_image_rounded,
+                size: 28, color: cs.outline)),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Encrypted image thumbnail
+
+class _EncryptedImageGridThumb extends StatelessWidget {
+  static final _cache   = LruCache<String, Future<Uint8List>>(60);
+  static final _limiter = ConcurrencyLimiter(3);
+
   final MountedContainer container;
   final String filePath;
 
@@ -319,338 +476,75 @@ class _EncryptedImageGridThumb extends StatefulWidget {
     required this.filePath,
   });
 
-  @override
-  State<_EncryptedImageGridThumb> createState() =>
-      _EncryptedImageGridThumbState();
-}
+  static Future<Uint8List> _fetch(
+      MountedContainer container, String path) async {
+    final size = await vaultExplorerApi.getFileSize(container, path);
+    if (size <= 0) throw Exception('File is empty');
 
-class _EncryptedImageGridThumbState extends State<_EncryptedImageGridThumb> {
-  static final _imageThumbCache = LruCache<String, Future<Uint8List>>(60);
-  static final _imageDecoderLimiter = ConcurrencyLimiter(3);
-
-  Uint8List? _bytes;
-  bool _isLoading = true;
-  bool _hasError  = false;
-
-  Completer<void>? _limiterCompleter;
-  String? _loadingPath;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadImage();
+    // PERF-02 fix: only read up to _kThumbReadLimit bytes.
+    // For JPEG/PNG the header and first few tiles are enough for a thumbnail.
+    final readLen = min(size, _kThumbReadLimit);
+    final data = await vaultExplorerApi.readFileChunk(
+        container, path, 0, size);
+    if (data == null || data.isEmpty) throw Exception('No bytes read');
+    return data;
   }
 
   @override
-  void didUpdateWidget(_EncryptedImageGridThumb oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.filePath != widget.filePath) {
-      _cancelPendingLoad();
-      _loadImage();
-    }
-  }
-
-  @override
-  void dispose() {
-    _cancelPendingLoad();
-    super.dispose();
-  }
-
-  void _cancelPendingLoad() {
-    if (_limiterCompleter != null) {
-      _imageDecoderLimiter.cancel(_limiterCompleter!);
-      _limiterCompleter = null;
-    }
-    _loadingPath = null;
-  }
-
-  Future<void> _loadImage() async {
-    final targetPath = widget.filePath;
-    _loadingPath = targetPath;
-    final cacheKey = '${widget.container.volId}:$targetPath';
-
-    // 1. Instant Cache Hit Check (Synchronous)
-    var future = _imageThumbCache[cacheKey];
-
-    if (future == null) {
-      if (mounted) {
-        setState(() {
-          _isLoading = true;
-          _hasError = false;
-        });
-      }
-
-      // 2. Debounce Delay (Skip processing if scrolling quickly)
-      await Future.delayed(const Duration(milliseconds: 100));
-      if (targetPath != _loadingPath || !mounted) return;
-
-      // Double-check cache in case another cell initiated the load during the delay
-      future = _imageThumbCache[cacheKey];
-      if (future == null) {
-        future = _fetchImageBytesWithQueue(widget.container, targetPath);
-        _imageThumbCache[cacheKey] = future;
-      }
-    }
-
-    try {
-      final data = await future;
-      
-      // 3. Recycling Guard
-      if (targetPath != _loadingPath || !mounted) return;
-
-      setState(() {
-        _bytes = data;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (targetPath == _loadingPath) {
-        _imageThumbCache.remove(cacheKey);
-        debugPrint('Failed loading image thumbnail: $e');
-        
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _hasError = true;
-          });
-        }
-      }
-    }
-  }
-
-  Future<Uint8List> _fetchImageBytesWithQueue(MountedContainer container, String targetPath) async {
-    final completer = Completer<void>();
-    _limiterCompleter = completer;
-
-    bool acquired = false;
-    try {
-      await _imageDecoderLimiter.acquire(completer);
-      acquired = true;
-
-      if (targetPath != _loadingPath || !mounted) {
-        throw Exception('Cancelled before processing');
-      }
-
-      final size = await vaultExplorerApi.getFileSize(container, targetPath);
-      if (size <= 0) throw Exception('File is empty');
-
-      final data = await vaultExplorerApi.readFileChunk(container, targetPath, 0, size);
-      if (data == null || data.isEmpty) throw Exception('No bytes read');
-      return data;
-    } finally {
-      if (_limiterCompleter == completer) {
-        _limiterCompleter = null;
-      }
-      if (acquired) {
-        _imageDecoderLimiter.release();
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    if (_isLoading) {
-      return Container(
-        color: cs.surfaceContainerLow,
-        child: Center(
-          child: SizedBox(
-            width: 18, height: 18,
-            child: CircularProgressIndicator(
-                strokeWidth: 1.5, color: cs.primary.withOpacity(0.6)),
-          ),
-        ),
+  Widget build(BuildContext context) => _AsyncThumb(
+        key: ValueKey('img:$filePath'),
+        container: container,
+        filePath: filePath,
+        cache: _cache,
+        limiter: _limiter,
+        fetchFn: _fetch,
+        debounce: const Duration(milliseconds: 100),
       );
-    }
-    if (_hasError || _bytes == null) {
-      return Container(
-        color: cs.surfaceContainerLow,
-        child: Center(
-            child: Icon(Icons.broken_image_rounded, size: 28, color: cs.outline)),
-      );
-    }
-    return Image.memory(_bytes!, fit: BoxFit.cover, cacheHeight: 180);
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Video thumbnail loader
+// Video thumbnail — uses native getVideoThumbnail
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _VideoThumb extends StatefulWidget {
+class _VideoThumb extends StatelessWidget {
+  static final _cache   = LruCache<String, Future<Uint8List>>(100);
+  static final _limiter = ConcurrencyLimiter(1);
+
   final MountedContainer container;
   final String filePath;
 
   const _VideoThumb({required this.container, required this.filePath});
 
-  @override
-  State<_VideoThumb> createState() => _VideoThumbState();
-}
-
-class _VideoThumbState extends State<_VideoThumb> {
-  static final _videoThumbCache = LruCache<String, Future<Uint8List>>(100);
-  static final _videoDecoderLimiter = ConcurrencyLimiter(1);
-
-  Uint8List? _bytes;
-  bool _isLoading = true;
-  bool _hasError  = false;
-
-  Completer<void>? _limiterCompleter;
-  String? _loadingPath;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchVideoFrame();
-  }
-
-  @override
-  void didUpdateWidget(_VideoThumb oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.filePath != widget.filePath) {
-      _cancelPendingLoad();
-      _fetchVideoFrame();
-    }
-  }
-
-  @override
-  void dispose() {
-    _cancelPendingLoad();
-    super.dispose();
-  }
-
-  void _cancelPendingLoad() {
-    if (_limiterCompleter != null) {
-      _videoDecoderLimiter.cancel(_limiterCompleter!);
-      _limiterCompleter = null;
-    }
-    _loadingPath = null;
-  }
-
-  Future<void> _fetchVideoFrame() async {
-    final targetPath = widget.filePath;
-    _loadingPath = targetPath;
-    final cacheKey = '${widget.container.volId}:$targetPath';
-
-    var future = _videoThumbCache[cacheKey];
-
-    if (future == null) {
-      if (mounted) {
-        setState(() {
-          _isLoading = true;
-          _hasError = false;
-        });
-      }
-
-      await Future.delayed(const Duration(milliseconds: 150));
-      if (targetPath != _loadingPath || !mounted) return;
-
-      future = _videoThumbCache[cacheKey];
-      if (future == null) {
-        future = _fetchVideoBytesWithQueue(widget.container, targetPath);
-        _videoThumbCache[cacheKey] = future;
-      }
-    }
-
-    try {
-      final data = await future;
-      if (targetPath != _loadingPath || !mounted) return;
-
-      if (data.isEmpty) {
-        setState(() {
-          _bytes = null;
-          _isLoading = false;
-          _hasError = true;
-        });
-      } else {
-        setState(() {
-          _bytes = data;
-          _isLoading = false;
-          _hasError = false;
-        });
-      }
-    } catch (e) {
-      if (targetPath == _loadingPath) {
-        _videoThumbCache.remove(cacheKey);
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _hasError = true;
-          });
-        }
-      }
-    }
-  }
-
-  Future<Uint8List> _fetchVideoBytesWithQueue(MountedContainer container, String targetPath) async {
-    final completer = Completer<void>();
-    _limiterCompleter = completer;
-
-    bool acquired = false;
-    try {
-      await _videoDecoderLimiter.acquire(completer);
-      acquired = true;
-
-      if (targetPath != _loadingPath || !mounted) {
-        throw Exception('Cancelled before processing');
-      }
-
-      final data = await vaultExplorerApi.getVideoThumbnail(container, targetPath);
-      if (data == null || data.isEmpty) {
-        return Uint8List(0);
-      }
-      return data;
-    } catch (e) {
-      if (e.toString().contains('Cancelled')) {
-        rethrow;
-      }
-      debugPrint('Video thumbnail extraction error for $targetPath: $e');
-      return Uint8List(0);
-    } finally {
-      if (_limiterCompleter == completer) {
-        _limiterCompleter = null;
-      }
-      if (acquired) {
-        _videoDecoderLimiter.release();
-      }
-    }
+  static Future<Uint8List> _fetch(
+      MountedContainer container, String path) async {
+    final data = await vaultExplorerApi.getVideoThumbnail(container, path);
+    if (data == null || data.isEmpty) return Uint8List(0);
+    return data;
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    if (_isLoading) {
-      return Container(
-        color: cs.surfaceContainerLow,
-        child: Center(
-          child: SizedBox(
-            width: 18, height: 18,
-            child: CircularProgressIndicator(
-                strokeWidth: 1.5, color: cs.primary.withOpacity(0.6)),
-          ),
-        ),
-      );
-    }
-    if (_hasError || _bytes == null || _bytes!.isEmpty) {
-      return Container(
-        color: cs.surfaceContainerLow,
-        child: Center(
-            child: Icon(Icons.play_circle_outline_rounded,
-                size: 32, color: cs.outline)),
-      );
-    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.memory(_bytes!, fit: BoxFit.cover, cacheHeight: 180),
-        Container(
-          color: Colors.black.withOpacity(0.12),
-          child: const Align(
-            alignment: Alignment.bottomRight,
-            child: Padding(
-              padding: EdgeInsets.all(6.0),
-              child: Icon(Icons.play_circle_outline_rounded,
-                  size: 16, color: Colors.white70),
-            ),
+        _AsyncThumb(
+          key: ValueKey('vid:$filePath'),
+          container: container,
+          filePath: filePath,
+          cache: _cache,
+          limiter: _limiter,
+          fetchFn: _fetch,
+          debounce: const Duration(milliseconds: 150),
+        ),
+        // Play icon overlay — always visible regardless of thumb load state.
+        Align(
+          alignment: Alignment.bottomRight,
+          child: Padding(
+            padding: const EdgeInsets.all(6.0),
+            child: Icon(Icons.play_circle_outline_rounded,
+                size: 16, color: cs.onSurface.withOpacity(0.7)),
           ),
         ),
       ],
@@ -659,9 +553,7 @@ class _VideoThumbState extends State<_VideoThumb> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Concurrency Limiter
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ConcurrencyLimiter
 class ConcurrencyLimiter {
   final int maxConcurrency;
   int _running = 0;
@@ -669,20 +561,24 @@ class ConcurrencyLimiter {
 
   ConcurrencyLimiter(this.maxConcurrency);
 
+  /// Waits until a slot is available, then increments [_running].
+  /// Throws if [completer] is cancelled while waiting.
   Future<void> acquire(Completer<void> completer) async {
     if (_running < maxConcurrency) {
       _running++;
+      // Complete immediately — caller proceeds without entering the wait list.
       completer.complete();
       return;
     }
     _waiting.add(completer);
-    try {
-      await completer.future;
-    } catch (_) {
-      rethrow;
-    }
+    // Wait for release() to resolve our completer. May throw if cancelled.
+    await completer.future;
+    // completer.future resolving means release() incremented _running for us
+    // before completing it (see _drainNext).
   }
 
+  /// Cancels a waiting completer. Safe to call even if not in the list.
+  /// Does NOT touch [_running] because the slot was never acquired.
   void cancel(Completer<void> completer) {
     if (_waiting.remove(completer)) {
       if (!completer.isCompleted) {
@@ -691,23 +587,25 @@ class ConcurrencyLimiter {
     }
   }
 
+  /// Releases a previously acquired slot and wakes the next waiter if any.
   void release() {
-    _running--;
-    if (_running < 0) {
-      _running = 0;
-    }
-    _processNext();
+    // Decrement first, then attempt to hand off to a waiter.
+    _running = (_running - 1).clamp(0, maxConcurrency);
+    _drainNext();
   }
 
-  void _processNext() {
-    while (_running < maxConcurrency && _waiting.isNotEmpty) {
-      _running++;
+  void _drainNext() {
+    while (_waiting.isNotEmpty && _running < maxConcurrency) {
       final next = _waiting.removeLast();
-      if (!next.isCompleted) {
-        next.complete();
-      } else {
-        _running--;
+      if (next.isCompleted) {
+        // Already cancelled — skip without consuming a slot.
+        continue;
       }
+      // Reserve the slot before completing so the waiter sees _running already
+      // incremented when it resumes from acquire().
+      _running++;
+      next.complete();
+      return;
     }
   }
 }
