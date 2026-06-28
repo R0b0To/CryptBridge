@@ -45,7 +45,8 @@ private object ChannelMethods {
     const val OPEN_WITH_APP       = "openWithApp"
     const val GET_VIDEO_THUMBNAIL = "getVideoThumbnail"
     const val GET_IMAGE_THUMBNAIL = "getImageThumbnail"
-    const val GENERATE_AND_CACHE_THUMBNAIL = "generateAndCacheThumbnail" // Added
+    const val GENERATE_AND_CACHE_THUMBNAIL = "generateAndCacheThumbnail"
+    const val GET_FOLDER_SIZE = "getFolderSize"
     const val HASH_PASSWORD       = "hashPassword"
     const val WRITE_FILE_CHUNK    = "writeFileChunk"
 }
@@ -530,6 +531,30 @@ private fun scaledToFit(src: Bitmap, maxEdge: Int): Bitmap {
                         }.start()
                     }
 
+                    ChannelMethods.GET_FOLDER_SIZE -> {
+        val uriString = call.argument<String>("filePath")
+        val dirPath   = call.argument<String>("dirPath") ?: ""
+        if (uriString == null) {
+            result.error("INVALID_ARGS", "filePath is required", null)
+            return@setMethodCallHandler
+        }
+        Thread {
+            try {
+                val volId = VeraCryptSession.getVolumeIdByUri(uriString)
+                    ?: run {
+                        runOnUiThread { result.error("NOT_MOUNTED", "Container not mounted", null) }
+                        return@Thread
+                    }
+                val total = synchronized(VeraCryptSession.locks[volId]) {
+                    VeraCryptEngine.getFolderSizeNative(-1, "", 0, dirPath, volId)
+                }
+                runOnUiThread { result.success(total) }
+            } catch (e: Exception) {
+                runOnUiThread { result.error("C++_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
                     ChannelMethods.READ_FILE_CHUNK -> {
                         val uriString = call.argument<String>("filePath")
                         val fileName  = call.argument<String>("fileName")
@@ -1012,7 +1037,7 @@ private fun scaledToFit(src: Bitmap, maxEdge: Int): Bitmap {
         for (entry in children) {
             if (entry.startsWith("System:")) continue
             val childIsDir = entry.startsWith("[DIR] ")
-            val childName  = if (childIsDir) entry.substringAfter("[DIR] ") else entry.substringBefore("|")
+            val childName = if (childIsDir) entry.substringAfter("[DIR] ").substringBefore("|") else entry.substringBefore("|")
             count += exportEntryRecursive(destDir, "$fatPath/$childName", childIsDir, containerUri, volId)
         }
         return count

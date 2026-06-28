@@ -349,7 +349,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 _SectionLabel('ABOUT', cs),
                 const SizedBox(height: 8),
                 _Card(cs: cs, children: [
-                  _InfoRow('Version',        '0.8.7',                  cs),
+                  _InfoRow('Version',        '0.8.9',                  cs),
                   const Divider(),
                   _InfoRow('Encryption',     'AES-256-XTS (VeraCrypt)', cs),
                   const Divider(),

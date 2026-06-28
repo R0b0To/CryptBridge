@@ -171,6 +171,20 @@ class VaultExplorerApi {
     );
     return result ?? 0;
   }
+  /// Returns the recursive byte total of all files inside [dirPath].
+  ///
+  /// This is a potentially slow operation for large directory trees; callers
+  /// should invoke it on a background-triggered path (e.g. from
+  /// [SelectionMixin.fetchFolderSizes]) rather than on every build cycle.
+  ///
+  /// Returns 0 if the container is not mounted or the directory is empty.
+  Future<int> getFolderSize(MountedContainer container, String dirPath) async {
+    final result = await _channel.invokeMethod<int>(
+      ChannelMethods.getFolderSize,
+      {'filePath': container.uri, 'dirPath': dirPath},
+    );
+    return result ?? 0;
+  }
 
   Future<Uint8List?> readFileChunk(
       MountedContainer container, String fileName, int offset, int length) async {

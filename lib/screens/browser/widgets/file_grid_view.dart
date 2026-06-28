@@ -8,6 +8,7 @@ import '../../../services/vaultexplorer_api.dart';
 import '../../../utils/file_type_utils.dart';
 import '../../../utils/format_utils.dart';
 import '../../../utils/lru_cache.dart';
+import '../../../utils/raw_entry.dart';
 
 
 /// A dynamic gallery grid for the file browser supporting pinch-to-zoom.
@@ -124,7 +125,7 @@ class _FileGridViewState extends State<FileGridView> {
   }
 
   Widget _buildDirCell(BuildContext context, String rawItem) {
-    final name       = rawItem.replaceFirst('[DIR] ', '');
+    final name = RawEntry.parse(rawItem).name;
     final isSelected = widget.selectedItems.contains(rawItem);
     final cs         = Theme.of(context).colorScheme;
 
@@ -189,7 +190,6 @@ class _FileGridViewState extends State<FileGridView> {
           : () => widget.onFileLongMenu?.call(rawItem),
       preview: previewWidget,
       label: cleanName,
-      sublabel: fileSize > 0 ? formatBytes(fileSize) : null,
     );
   }
 }

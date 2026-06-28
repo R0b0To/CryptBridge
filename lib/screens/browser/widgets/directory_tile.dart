@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 class DirectoryTile extends StatelessWidget {
   final String name;
+  final String? subtitle; // Added subtitle property
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -13,6 +14,7 @@ class DirectoryTile extends StatelessWidget {
   const DirectoryTile({
     Key? key,
     required this.name,
+    this.subtitle, // Added subtitle parameter
     required this.onTap,
     this.onLongPress,
     this.selectionMode = false,
@@ -40,6 +42,14 @@ class DirectoryTile extends StatelessWidget {
           fontWeight: selected ? FontWeight.w500 : FontWeight.normal,
         ),
       ),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle!,
+              style: textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            )
+          : null, // Renders the modified date below the folder title
       trailing: selectionMode
           ? Icon(
               selected

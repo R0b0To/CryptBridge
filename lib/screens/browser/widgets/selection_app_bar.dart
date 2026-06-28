@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 /// App bar shown while the user has one or more items selected.
 class SelectionAppBar extends StatelessWidget implements PreferredSizeWidget {
   final int selectedCount;
+  final String selectionLabel; // Custom size/calculating label
   final bool singleSelected;
   final bool singleFileSelected;
 
@@ -18,6 +19,7 @@ class SelectionAppBar extends StatelessWidget implements PreferredSizeWidget {
   const SelectionAppBar({
     Key? key,
     required this.selectedCount,
+    required this.selectionLabel,
     required this.singleSelected,
     required this.singleFileSelected,
     required this.onClose,
@@ -74,11 +76,14 @@ class SelectionAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Text(
-                'selected',
-                style: textTheme.titleSmall?.copyWith(
-                  color: cs.onSurface,
-                  fontWeight: FontWeight.w500,
+              Flexible(
+                child: Text(
+                  selectionLabel,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.titleSmall?.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               const SizedBox(width: 2),

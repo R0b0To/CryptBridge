@@ -11,6 +11,7 @@
 #include <memory>
 #include <algorithm>
 #include <mutex>
+#include <ctime>   // mktime, struct tm, time_t
 
 #include "mbedtls/md.h"
 #include "mbedtls/pkcs5.h"
@@ -148,6 +149,25 @@ static inline int clampPim(int pim) {
     if (pim < 0) return 0;
     if (pim > 2000) return 2000;
     return pim;
+}
+
+// ── FAT date/time → Unix timestamp ─────────────────────────────────────────
+
+static uint64_t fatToUnixTimestamp(WORD fdate, WORD ftime) {
+    // FatFs stores dates as FAT-epoch (1980-01-01).
+    // fdate: bits[15:9]=year-1980  bits[8:5]=month  bits[4:0]=day
+    // ftime: bits[15:11]=hour  bits[10:5]=minute  bits[4:0]=second/2
+    if (fdate == 0) return 0; // no RTC data (FF_FS_NORTC=1 new files)
+    struct tm t = {};
+    t.tm_year  = ((fdate >> 9) & 0x7F) + 80; // FAT epoch 1980, tm epoch 1900
+    t.tm_mon   = ((fdate >> 5) & 0x0F) - 1;  // FAT 1-12  →  tm 0-11
+    t.tm_mday  =  (fdate)       & 0x1F;
+    t.tm_hour  = (ftime >> 11)  & 0x1F;
+    t.tm_min   = (ftime >>  5)  & 0x3F;
+    t.tm_sec   = (ftime  & 0x1F) * 2;
+    t.tm_isdst = -1;
+    const time_t ts = mktime(&t);
+    return (ts < 0) ? 0 : static_cast<uint64_t>(ts);
 }
 
 // ----------------------------------------------------------------====
@@ -427,6 +447,30 @@ bool prepareSession(int fd, const char* password, int pim, int volId, bool force
 // SHARED: Directory listing
 // ----------------------------------------------------------------====
 
+// Returns the total byte size of all files under [fatPath] (recursive).
+// Called from getFolderSizeNative; also usable for progress reporting later.
+static uint64_t recursiveFolderSize(int volId, const std::string& fatPath) {
+    std::string fullPath = drivePaths[volId];
+    if (!fatPath.empty()) { fullPath += '/'; fullPath += fatPath; }
+
+    uint64_t total = 0;
+    DIR dir; FILINFO fno;
+    if (f_opendir(&dir, fullPath.c_str()) == FR_OK) {
+        while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+            if (fno.fattrib & AM_DIR) {
+                const std::string child = fatPath.empty()
+                    ? std::string(fno.fname)
+                    : fatPath + '/' + fno.fname;
+                total += recursiveFolderSize(volId, child);
+            } else {
+                total += fno.fsize;
+            }
+        }
+        f_closedir(&dir);
+    }
+    return total;
+}
+
 static jobjectArray buildDirectoryListing(JNIEnv* env, int volId, const char* pathSuffix) {
     std::vector<std::string> results;
     std::string fullPath = drivePaths[volId];
@@ -447,14 +491,22 @@ static jobjectArray buildDirectoryListing(JNIEnv* env, int volId, const char* pa
             const char* name = fno.fname;
             if (strcmp(name, "SYSTEM~1") == 0 || strcmp(name, "$RECYCLE.BIN") == 0)
                 continue;
+
+            const uint64_t ts = fatToUnixTimestamp(fno.fdate, fno.ftime);
             if (fno.fattrib & AM_DIR) {
+                // Format: "[DIR] name|0|unixSecs"
                 std::string entry = "[DIR] ";
                 entry += name;
+                entry += "|0|";
+                entry += std::to_string(ts);
                 results.push_back(std::move(entry));
             } else {
+                // Format: "name|sizeBytes|unixSecs"
                 std::string entry = name;
                 entry += '|';
                 entry += std::to_string(fno.fsize);
+                entry += '|';
+                entry += std::to_string(ts);
                 results.push_back(std::move(entry));
             }
         }
@@ -1047,6 +1099,27 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_writeFileChunkNative(
     env->ReleaseStringUTFChars(password, nativePass);
     env->ReleaseStringUTFChars(targetFileName, targetName);
     return success ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_getFolderSizeNative(
+        JNIEnv* env, jobject,
+        jint fd, jstring password, jint pim,
+        jstring dirPath, jint volId) {
+
+    const char* nativePass = env->GetStringUTFChars(password, nullptr);
+    const char* nativePath = env->GetStringUTFChars(dirPath, nullptr);
+
+    jlong total = 0;
+    if (prepareSession(fd, nativePass, pim, volId, false)) {
+        if (ensureMounted(volId)) {
+            total = static_cast<jlong>(recursiveFolderSize(volId, nativePath));
+        }
+    }
+
+    env->ReleaseStringUTFChars(password, nativePass);
+    env->ReleaseStringUTFChars(dirPath, nativePath);
+    return total;
 }
 
 // ----------------------------------------------------------------====

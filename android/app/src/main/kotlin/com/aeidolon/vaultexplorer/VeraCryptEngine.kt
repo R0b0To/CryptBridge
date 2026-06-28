@@ -23,6 +23,10 @@ object VeraCryptEngine {
     @JvmStatic
     external fun getFileSizeNative(fd: Int, password: String, pim: Int, targetFileName: String, volId: Int): Long
 
+    /** Returns the recursive byte total for every file under [dirPath] inside volume [volId]. */
+    @JvmStatic
+    external fun getFolderSizeNative(fd: Int, password: String, pim: Int, dirPath: String, volId: Int): Long
+
     @JvmStatic
     external fun readFileChunkNative(fd: Int, password: String, pim: Int, targetFileName: String, offset: Long, length: Int, volId: Int): ByteArray?
 

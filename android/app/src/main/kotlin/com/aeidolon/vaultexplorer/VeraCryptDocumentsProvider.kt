@@ -174,8 +174,8 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
             files?.forEach { file ->
                 if (file.startsWith("System:")) return@forEach
                 val isDir     = file.startsWith("[DIR] ")
-                val cleanName = if (isDir) file.substringAfter("[DIR] ") else file.substringBefore("|")
-                val size      = if (isDir) 0L else file.substringAfter("|", "0").toLongOrNull() ?: 0L
+                val cleanName = if (isDir) file.substringAfter("[DIR] ").substringBefore("|") else file.substringBefore("|")
+                val size      = if (isDir) 0L else file.split("|").getOrNull(1)?.toLongOrNull() ?: 0L
                 val childFatPath = if (parentFatPath.isEmpty()) cleanName else "$parentFatPath/$cleanName"
                 val childType = if (isDir) "dir" else "file"
                 val childMime = if (isDir) DocumentsContract.Document.MIME_TYPE_DIR

@@ -8,6 +8,7 @@ import '../../services/app_settings_service.dart';
 import '../../services/cross_container_clipboard.dart';
 import '../../services/vaultexplorer_api.dart';
 import '../../utils/format_utils.dart';
+import '../../utils/raw_entry.dart'; // Handles metadata parsing cleanly
 import 'browser_dialogs.dart';
 import 'media_viewer_screen.dart';
 import 'mixins/selection_mixin.dart';
@@ -189,7 +190,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   // ── Navigation ────────────────────────────────────────────────────────────
 
   void _enterDirectory(String rawDirEntry) {
-    final name    = rawDirEntry.replaceFirst('[DIR] ', '');
+    final entry   = RawEntry.parse(rawDirEntry);
+    final name    = entry.name; // Clean, safely parsed directory name
     final newPath = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
     setState(() {
       _pathStack.add(PathSegment(name, newPath));
@@ -219,6 +221,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     _loadDirectoryContents(_currentDirPath);
   }
 
+  // ── Selection Mixin Override ──────────────────────────────────────────────
+
+  @override
+  void toggleSelectItem(String item) {
+    super.toggleSelectItem(item);
+    if (selectedFolderCount > 0) {
+      fetchFolderSizes(widget.container, _currentDirPath);
+    }
+  }
+
   // ── Item tap / long-press ─────────────────────────────────────────────────
 
   void _handleDirTap(String rawItem) {
@@ -233,14 +245,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   void _handleFileTap(String rawItem) {
     _signalActivity();
     if (isSelectionMode) { toggleSelectItem(rawItem); return; }
-    final cleanName = rawItem.split('|').first;
+    final entry     = RawEntry.parse(rawItem);
+    final cleanName = entry.name;
     final fullPath  =
         _currentDirPath.isEmpty ? cleanName : '$_currentDirPath/$cleanName';
 
     if (_isSupportedMedia(cleanName)) {
       final mediaEntries = _currentItems
           .where((f) => !f.startsWith('[DIR]') && !f.startsWith('System:'))
-          .map((f) => f.split('|').first)
+          .map((f) => RawEntry.parse(f).name)
           .where(_isSupportedMedia)
           .toList();
       final resolvedPaths = mediaEntries
@@ -263,7 +276,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     _signalActivity();
     final localMedia = _currentItems
         .where((f) => !f.startsWith('[DIR]') && !f.startsWith('System:'))
-        .map((f) => f.split('|').first)
+        .map((f) => RawEntry.parse(f).name)
         .where(_isSupportedMedia)
         .toList();
 
@@ -314,10 +327,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     HapticFeedback.selectionClick();
     _signalActivity();
     if (!isSelectionMode) {
-      setState(() { isSelectionMode = true; selectedItems.add(rawItem); });
-    } else {
-      toggleSelectItem(rawItem);
+      setState(() { isSelectionMode = true; });
     }
+    toggleSelectItem(rawItem);
   }
 
   // ── Media helpers ─────────────────────────────────────────────────────────
@@ -343,9 +355,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         for (final item in items) {
           if (item.startsWith('System:')) continue;
           if (item.startsWith('[DIR] ')) {
-            subdirNames.add(item.replaceFirst('[DIR] ', ''));
+            subdirNames.add(RawEntry.parse(item).name);
           } else {
-            final fileName = item.split('|').first;
+            final fileName = RawEntry.parse(item).name;
             if (_isSupportedMedia(fileName)) {
               foundFiles
                   .add(dirPath.isEmpty ? fileName : '$dirPath/$fileName');
@@ -383,18 +395,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   void _initClipboard({required bool cut}) {
     _signalActivity();
     final sources = selectedItems.map((item) {
-      final isDir  = item.startsWith('[DIR] ');
-      final name   = isDir ? item.replaceFirst('[DIR] ', '') : item.split('|').first;
-      final path   = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
+      final entry = RawEntry.parse(item);
+      final isDir = entry.isDir;
+      final name  = entry.name;
+      final path  = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
       int? size;
       if (!isDir) {
-        final parts = item.split('|');
-        if (parts.length > 1) size = int.tryParse(parts[1]);
+        size = entry.sizeBytes;
       }
       return <String, dynamic>{'path': path, 'isDir': isDir, 'size': size};
     }).toList();
 
-    // FIX: Use updated clipboard API (no MountedContainer reference)
     _clip.set(
       volId: widget.container.volId,
       displayName: widget.container.displayName,
@@ -414,11 +425,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     for (final entry in entries) {
       if (entry.startsWith('System:')) continue;
       if (entry.startsWith('[DIR] ')) {
-        final childName = entry.replaceFirst('[DIR] ', '');
+        final childName = RawEntry.parse(entry).name;
         total += await _measureTreeBytes(container, '$path/$childName');
       } else {
-        final parts = entry.split('|');
-        total += parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+        total += RawEntry.parse(entry).sizeBytes;
       }
     }
     return total;
@@ -534,12 +544,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     final existingNames = <String>{};
     final existingDirs  = <String>{};
     for (final item in existingRaw) {
-      if (item.startsWith('[DIR] ')) {
-        final n = item.replaceFirst('[DIR] ', '').toLowerCase();
-        existingNames.add(n);
-        existingDirs.add(n);
+      final entry = RawEntry.parse(item);
+      final name = entry.name;
+      if (entry.isDir) {
+        existingNames.add(name.toLowerCase());
+        existingDirs.add(name.toLowerCase());
       } else {
-        existingNames.add(item.split('|').first.toLowerCase());
+        existingNames.add(name.toLowerCase());
       }
     }
 
@@ -738,10 +749,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         await vaultExplorerApi.listDirectory(container, path) ?? [];
     for (final entry in children) {
       if (entry.startsWith('System:')) continue;
-      final childIsDir = entry.startsWith('[DIR] ');
-      final childName  = childIsDir
-          ? entry.replaceFirst('[DIR] ', '')
-          : entry.split('|').first;
+      final entryParsed = RawEntry.parse(entry);
+      final childIsDir  = entryParsed.isDir;
+      final childName   = entryParsed.name;
       await _deleteEntryRecursive(
           container, '$path/$childName', childIsDir);
     }
@@ -801,10 +811,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     bool allOk = true;
     for (final entry in children) {
       if (entry.startsWith('System:')) continue;
-      final childIsDir = entry.startsWith('[DIR] ');
-      final childName  = childIsDir
-          ? entry.replaceFirst('[DIR] ', '')
-          : entry.split('|').first;
+      final entryParsed = RawEntry.parse(entry);
+      final childIsDir  = entryParsed.isDir;
+      final childName   = entryParsed.name;
       final ok = await _copyEntry(
         srcContainer,
         destContainer,
@@ -831,10 +840,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         int failCount = 0;
         try {
           for (final item in items) {
-            final isDir = item.startsWith('[DIR] ');
-            final name  = isDir
-                ? item.replaceFirst('[DIR] ', '')
-                : item.split('|').first;
+            final entry = RawEntry.parse(item);
+            final isDir = entry.isDir;
+            final name  = entry.name;
             final full  =
                 _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
             if (!await _deleteEntryRecursive(widget.container, full, isDir)) {
@@ -861,8 +869,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   Future<void> _exportSelectedToStorage() async {
     _signalActivity();
     final items = selectedItems.map((item) {
-      final isDir = item.startsWith('[DIR] ');
-      final name  = isDir ? item.replaceFirst('[DIR] ', '') : item.split('|').first;
+      final entry = RawEntry.parse(item);
+      final isDir = entry.isDir;
+      final name  = entry.name;
       final path  = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
       return <String, dynamic>{'path': path, 'isDir': isDir};
     }).toList();
@@ -976,11 +985,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
             ? <String>[]
             : dirs
                 .where((d) =>
-                    d.replaceFirst('[DIR] ', '').toLowerCase().contains(query))
+                    RawEntry.parse(d).name.toLowerCase().contains(query))
                 .toList());
 
     final filteredFiles = files.where((f) {
-      final cleanName = f.split('|').first;
+      final cleanName = RawEntry.parse(f).name;
       if (query.isNotEmpty && !cleanName.toLowerCase().contains(query))
         return false;
       return _matchesFilter(cleanName);
@@ -1042,8 +1051,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     if (isSelectionMode) {
       final single     = selectedItems.length == 1;
       final singleFile = single && !selectedItems.first.startsWith('[DIR] ');
+
+      // Calculate size label to replace dynamic text
+      final totalBytes = selectedTotalBytes;
+      final isPending = hasPendingFolderSizes;
+      final String sizeLabel;
+      if (isPending) {
+        sizeLabel = totalBytes > 0
+            ? '${formatBytes(totalBytes)} (calculating…)'
+            : 'calculating…';
+      } else {
+        sizeLabel = formatBytes(totalBytes);
+      }
+
       return SelectionAppBar(
         selectedCount: selectedItems.length,
+        selectionLabel: sizeLabel,
         singleSelected: single,
         singleFileSelected: singleFile,
         onClose: exitSelectionMode,
@@ -1051,10 +1074,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
             setState(() => selectedItems.addAll(allSelectable)),
         onRename: () {
           final raw   = selectedItems.first;
-          final isDir = raw.startsWith('[DIR] ');
-          final name  = isDir
-              ? raw.replaceFirst('[DIR] ', '')
-              : raw.split('|').first;
+          final entry = RawEntry.parse(raw);
+          final isDir = entry.isDir;
+          final name  = entry.name;
           BrowserDialogs.showRename(context,
               container: widget.container,
               oldName: name,
@@ -1067,9 +1089,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         onExport: _exportSelectedToStorage,
         onDelete: _batchDelete,
         onOpenWithApp: () {
-          final raw  = selectedItems.first;
-          final name = raw.split('|').first;
-          final path = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
+          final raw   = selectedItems.first;
+          final entry = RawEntry.parse(raw);
+          final name  = entry.name;
+          final path  = _currentDirPath.isEmpty ? name : '$_currentDirPath/$name';
           vaultExplorerApi.openWithApp(widget.container, path);
           exitSelectionMode();
         },
@@ -1209,7 +1232,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                 final hasLocalMedia = _currentItems
                     .where((f) => !f.startsWith('[DIR]') &&
                         !f.startsWith('System:'))
-                    .map((f) => f.split('|').first)
+                    .map((f) => RawEntry.parse(f).name)
                     .any(_isSupportedMedia);
                 final hasSubfolders =
                     _currentItems.any((f) => f.startsWith('[DIR] '));
@@ -1241,6 +1264,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                 _buildSortMenuButton(SortBy.name, 'Name', cs, textTheme),
                 _buildSortMenuButton(SortBy.size, 'Size', cs, textTheme),
                 _buildSortMenuButton(SortBy.extension, 'Type', cs, textTheme),
+                _buildSortMenuButton(SortBy.date, 'Date', cs, textTheme),
               ],
               child: const Text('Sort By'),
             ),

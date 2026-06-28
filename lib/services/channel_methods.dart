@@ -1,7 +1,8 @@
 /// Single source of truth for every MethodChannel method name.
 ///
 /// Both [VaultExplorerApi] call-sites and [MainActivity]'s `when` block must
-/// use these constants.  The Kotlin side mirrors them in [ChannelMethods.kt].
+/// use these constants.  The Kotlin side mirrors them in the local
+/// [ChannelMethods] object inside [MainActivity].
 abstract final class ChannelMethods {
   // ── Container lifecycle ──────────────────────────────────────────────────
   static const pickContainer   = 'pickContainer';
@@ -16,6 +17,7 @@ abstract final class ChannelMethods {
   static const importFile          = 'importFile';
   static const importFolder        = 'importFolder';
   static const getFileSize         = 'getFileSize';
+  static const getFolderSize       = 'getFolderSize'; // recursive directory byte total
   static const readFileChunk       = 'readFileChunk';
   static const writeBackFile       = 'writeBackFile';
   static const getSpaceInfo        = 'getSpaceInfo';
