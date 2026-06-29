@@ -42,6 +42,58 @@ class PathSegment {
   const PathSegment(this.label, this.fatPath);
 }
 
+// ── Bounded concurrency semaphore ─────────────────────────────────────────────
+//
+// Limits the number of simultaneous file copy operations to avoid overwhelming
+// the FatFs layer.  Callers acquire a permit before starting a copy and release
+// it when done.
+
+class _CopySemaphore {
+  final int maxConcurrent;
+  int _running = 0;
+  final _queue = <Completer<void>>[];
+
+  _CopySemaphore(this.maxConcurrent);
+
+  Future<void> acquire() async {
+    if (_running < maxConcurrent) {
+      _running++;
+      return;
+    }
+    final completer = Completer<void>();
+    _queue.add(completer);
+    await completer.future;
+  }
+
+  void release() {
+    if (_queue.isNotEmpty) {
+      final next = _queue.removeAt(0);
+      next.complete();
+    } else {
+      _running = (_running - 1).clamp(0, maxConcurrent);
+    }
+  }
+}
+
+// ── Live copy progress ────────────────────────────────────────────────────────
+
+class _CopyProgress {
+  final int total;
+  int completed = 0;
+  int failed    = 0;
+  int skipped   = 0;
+  bool diskFull = false;
+
+  _CopyProgress(this.total);
+
+  String statusLine(bool isCut) {
+    final verb = isCut ? 'Moving' : 'Copying';
+    final done = completed + failed + skipped;
+    return '$verb $done/$total…'
+        '${failed > 0 ? '  ($failed failed)' : ''}';
+  }
+}
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class FileBrowserScreen extends StatefulWidget {
@@ -82,17 +134,20 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   BrowserLayoutMode _layoutMode = BrowserLayoutMode.list;
   String? _currentFilter;
 
-  // State-resolved cache mode
   ThumbnailCacheMode _resolvedThumbnailCacheMode = ThumbnailCacheMode.appCache;
 
-  // FIX: Maximum recursion depth for directory scans
+  // Maximum recursion depth for directory scans.
   static const int _maxScanDepth = 20;
 
-  static const _imageExts    = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
-  static const _videoExts    = {'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv'};
-  static const _audioExts    = {'mp3', 'm4a', 'wav', 'flac', 'ogg', 'aac'};
+  // Maximum concurrent file copies.  4 strikes a balance between throughput
+  // and not starving the FatFs mutex on the Kotlin side.
+  static const int _maxConcurrentCopies = 4;
 
-  bool get _atRoot        => _pathStack.length == 1;
+  static const _imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
+  static const _videoExts = {'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv'};
+  static const _audioExts = {'mp3', 'm4a', 'wav', 'flac', 'ogg', 'aac'};
+
+  bool get _atRoot         => _pathStack.length == 1;
   String get _currentDirPath => _pathStack.last.fatPath;
 
   @override
@@ -108,13 +163,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     super.dispose();
   }
 
-  // ── Notify parent of user activity ────────────────────────────────────────
-
-  /// FIX: Call whenever the user performs a significant action so the
-  ///      auto-close timer in VaultDashboard is reset.
   void _signalActivity() => widget.onUserActivity?.call();
 
-  // ── Init settings and contents ────────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────────────────
 
   Future<void> _initSettingsAndContents() async {
     setState(() => _isLoading = true);
@@ -125,7 +176,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         final appSettings = await AppSettingsService.loadSettings();
         final records = await ContainerRepository.instance.loadAll();
         final record = records[widget.container.uri];
-
         if (mounted) {
           setState(() {
             _resolvedThumbnailCacheMode =
@@ -160,7 +210,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Future<void> _loadDirectoryContents(String path) async {
     setState(() => _isLoading = true);
-    _signalActivity(); // FIX: reset auto-close timer on navigation
+    _signalActivity();
     try {
       final items = await vaultExplorerApi.listDirectory(widget.container, path);
       final space = await vaultExplorerApi.getSpaceInfo(widget.container);
@@ -235,11 +285,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   void _handleDirTap(String rawItem) {
     _signalActivity();
-    if (isSelectionMode) {
-      toggleSelectItem(rawItem);
-    } else {
-      _enterDirectory(rawItem);
-    }
+    if (isSelectionMode) toggleSelectItem(rawItem);
+    else _enterDirectory(rawItem);
   }
 
   void _handleFileTap(String rawItem) {
@@ -298,7 +345,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     setState(() => _isLoading = true);
     _setStatus('Scanning subfolders for media…',
         autoClear: const Duration(seconds: 15));
-
     try {
       final recursiveMedia = await _scanMediaRecursively(_currentDirPath);
       if (!mounted) return;
@@ -327,9 +373,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     HapticFeedback.selectionClick();
     _signalActivity();
     if (!isSelectionMode) {
-      setState(() { isSelectionMode = true; });
+      setState(() { isSelectionMode = true; selectedItems.add(rawItem); });
+    } else {
+      toggleSelectItem(rawItem);
     }
-    toggleSelectItem(rawItem);
   }
 
   // ── Media helpers ─────────────────────────────────────────────────────────
@@ -341,11 +388,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         _audioExts.contains(ext);
   }
 
-  // FIX: Added depth limit to prevent stack overflow on pathological containers
   Future<List<String>> _scanMediaRecursively(String dirPath,
       {int depth = 0}) async {
     if (depth > _maxScanDepth) return [];
-
     final foundFiles  = <String>[];
     final subdirNames = <String>[];
     try {
@@ -359,8 +404,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           } else {
             final fileName = RawEntry.parse(item).name;
             if (_isSupportedMedia(fileName)) {
-              foundFiles
-                  .add(dirPath.isEmpty ? fileName : '$dirPath/$fileName');
+              foundFiles.add(dirPath.isEmpty ? fileName : '$dirPath/$fileName');
             }
           }
         }
@@ -369,9 +413,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
             final subPath = dirPath.isEmpty ? name : '$dirPath/$name';
             return _scanMediaRecursively(subPath, depth: depth + 1);
           }));
-          for (final list in nested) {
-            foundFiles.addAll(list);
-          }
+          for (final list in nested) foundFiles.addAll(list);
         }
       }
     } catch (e) {
@@ -444,10 +486,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     return _measureTreeBytes(container, item['path'] as String);
   }
 
-    Future<void> _paste() async {
+  // ── Paste — parallelised ──────────────────────────────────────────────────
+  //
+  // Previously each item was copied sequentially.  The new approach:
+  //
+  //   1. Conflict resolution is still serial (requires UI interaction).
+  //   2. Once each item has a resolved destination path it is dispatched
+  //      concurrently via Future.wait(), bounded to [_maxConcurrentCopies]
+  //      simultaneous operations by [_CopySemaphore].
+  //   3. [_CopyProgress] drives live status bar updates so the user can see
+  //      "Copying 12/47…" rather than a static spinner.
+  //   4. Rollback on disk-full still works: all created paths are tracked.
+
+  Future<void> _paste() async {
     if (!_clip.hasItems) return;
     _signalActivity();
- 
+
     final srcVolId = _clip.sourceVolId;
     if (srcVolId == null) {
       _setStatus('Clipboard source is invalid', error: true);
@@ -455,19 +509,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       setState(() {});
       return;
     }
- 
+
     final isCut         = _clip.isCutOperation;
     final sameContainer = _clip.isFromVolume(widget.container.volId);
     final items         = List<Map<String, dynamic>>.from(_clip.items);
- 
-    // Resolve the source container
+
     MountedContainer? srcContainer;
     if (!sameContainer) {
       if (widget.resolveContainer == null) {
-        _setStatus(
-          'Cross-container paste configuration is missing.',
-          error: true,
-        );
+        _setStatus('Cross-container paste configuration is missing.', error: true);
         return;
       }
       srcContainer = widget.resolveContainer!(srcVolId);
@@ -484,9 +534,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     } else {
       srcContainer = widget.container;
     }
- 
+
+    // ── Step 1: resolve destination paths (serial — may show dialogs) ───────
+
     final toProcess  = <Map<String, dynamic>>[];
     int skipCount    = 0;
+
     for (final item in items) {
       final srcPath  = item['path'] as String;
       final isDir    = item['isDir'] as bool;
@@ -494,23 +547,26 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       final destPath = _currentDirPath.isEmpty
           ? fileName
           : '$_currentDirPath/$fileName';
- 
+
       if (sameContainer && srcPath == destPath) { skipCount++; continue; }
-      if (sameContainer && isDir && destPath.startsWith('$srcPath/')) { skipCount++; continue; }
- 
+      if (sameContainer && isDir && destPath.startsWith('$srcPath/')) {
+        skipCount++; continue;
+      }
+
       toProcess.add({...item, '_destPath': destPath});
     }
- 
+
     if (toProcess.isEmpty) {
       _setStatus('Nothing to paste — already at destination');
       _clip.clear();
       return;
     }
- 
+
+    // ── Step 2: space pre-flight ─────────────────────────────────────────────
+
     setState(() => _isLoading = true);
-    _setStatus('Checking available space…',
-        autoClear: const Duration(minutes: 5));
- 
+    _setStatus('Checking available space…', autoClear: const Duration(minutes: 5));
+
     vaultExplorerApi.beginBatch(widget.container.volId);
  
     // FIX: Always check space, regardless of cut/copy.
@@ -547,7 +603,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       );
       return;
     }
- 
+
+    // ── Step 3: conflict resolution (serial — may show dialogs) ─────────────
+
     final existingRaw = await vaultExplorerApi.listDirectory(
             widget.container, _currentDirPath) ?? [];
     if (!mounted) {
@@ -566,77 +624,99 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         existingNames.add(item.split('|').first.toLowerCase());
       }
     }
- 
+
     _ConflictResolution? globalResolution;
-    int failCount = 0;
-    final List<String> createdDestPaths = [];
-    bool diskFull = false;
- 
-    _setStatus(isCut ? 'Moving…' : 'Copying…',
-        autoClear: const Duration(minutes: 10));
- 
-    try {
-      for (final item in toProcess) {
-        if (!mounted) break;
- 
-        final srcPath  = item['path'] as String;
-        final isDir    = item['isDir'] as bool;
-        final fileName = srcPath.split('/').last;
-        String destPath = item['_destPath'] as String;
- 
-        if (existingNames.contains(fileName.toLowerCase())) {
-          _ConflictResolution? resolution = globalResolution;
-          if (resolution == null) {
-            final result = await _showConflictResolutionDialog(
-              fileName,
-              hasMore: toProcess.length > 1,
-            );
-            if (!mounted) break;
-            if (result == null) break;
-            if (result.applyToAll) globalResolution = result.resolution;
-            resolution = result.resolution;
-          }
-          switch (resolution) {
-            case _ConflictResolution.skip:
-              skipCount++;
-              continue;
-            case _ConflictResolution.overwrite:
-              if (isCut) {
-                final destIsDir =
-                    existingDirs.contains(fileName.toLowerCase());
-                await _deleteEntryRecursive(
-                    widget.container, destPath, destIsDir);
-              }
-            case _ConflictResolution.keepBoth:
-              final uniqueName = makeUniqueName(fileName, existingNames);
-              existingNames.add(uniqueName.toLowerCase());
-              destPath = _currentDirPath.isEmpty
-                  ? uniqueName
-                  : '$_currentDirPath/$uniqueName';
-          }
+    final resolvedItems = <Map<String, dynamic>>[];
+
+    for (final item in toProcess) {
+      final srcPath  = item['path'] as String;
+      final isDir    = item['isDir'] as bool;
+      final fileName = srcPath.split('/').last;
+      String destPath = item['_destPath'] as String;
+
+      if (existingNames.contains(fileName.toLowerCase())) {
+        _ConflictResolution? resolution = globalResolution;
+        if (resolution == null) {
+          final result = await _showConflictResolutionDialog(
+            fileName,
+            hasMore: toProcess.length > 1,
+          );
+          if (!mounted) break;
+          if (result == null) break;
+          if (result.applyToAll) globalResolution = result.resolution;
+          resolution = result.resolution;
         }
- 
-        try {
-          final ok = await _copyEntry(
-              srcContainer, widget.container, srcPath, destPath, isDir, createdDestPaths);
-          if (!ok) {
-            failCount++;
+        switch (resolution) {
+          case _ConflictResolution.skip:
+            skipCount++;
             continue;
-          }
- 
-          if (ok && isCut) {
-            await _deleteEntryRecursive(srcContainer, srcPath, isDir);
-          }
-        } on _DiskFullException {
-          diskFull = true;
-          break;
+          case _ConflictResolution.overwrite:
+            if (isCut) {
+              final destIsDir = existingDirs.contains(fileName.toLowerCase());
+              await _deleteEntryRecursive(widget.container, destPath, destIsDir);
+            }
+          case _ConflictResolution.keepBoth:
+            final uniqueName = makeUniqueName(fileName, existingNames);
+            existingNames.add(uniqueName.toLowerCase());
+            destPath = _currentDirPath.isEmpty
+                ? uniqueName
+                : '$_currentDirPath/$uniqueName';
         }
       }
+      resolvedItems.add({...item, '_destPath': destPath});
+    }
+
+    // ── Step 4: parallel copy ────────────────────────────────────────────────
+
+    final progress          = _CopyProgress(resolvedItems.length);
+    final semaphore         = _CopySemaphore(_maxConcurrentCopies);
+    final createdDestPaths  = <String>[];
+
+    _setStatus(progress.statusLine(isCut),
+        autoClear: const Duration(minutes: 10));
+
+    try {
+      await Future.wait(resolvedItems.map((item) async {
+        await semaphore.acquire();
+        try {
+          if (!mounted) return;
+
+          final srcPath  = item['path'] as String;
+          final isDir    = item['isDir'] as bool;
+          final destPath = item['_destPath'] as String;
+
+          try {
+            final ok = await _copyEntry(
+                srcContainer!, widget.container, srcPath, destPath, isDir,
+                createdDestPaths);
+            if (!ok) {
+              progress.failed++;
+            } else if (isCut) {
+              await _deleteEntryRecursive(srcContainer, srcPath, isDir);
+              progress.completed++;
+            } else {
+              progress.completed++;
+            }
+          } on _DiskFullException {
+            progress.diskFull = true;
+            progress.failed++;
+            rethrow;
+          }
+
+          if (mounted) {
+            setState(() =>
+                _statusMessage = progress.statusLine(isCut));
+          }
+        } finally {
+          semaphore.release();
+        }
+      }));
+    } on _DiskFullException {
+      // Handled below.
     } finally {
       vaultExplorerApi.endBatch(widget.container.volId);
- 
-      if (diskFull) {
-        // Roll back partially-created destination files
+
+      if (progress.diskFull) {
         for (final path in createdDestPaths.reversed) {
           try {
             await _deleteEntryRecursive(widget.container, path, false);
@@ -646,26 +726,24 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       _clip.clear();
       await _loadDirectoryContents(_currentDirPath);
       if (mounted) {
-        if (diskFull) {
+        if (progress.diskFull) {
           _setStatus(
             'Disk full — operation stopped and partial files removed',
             error: true,
             autoClear: const Duration(seconds: 6),
           );
         } else {
-          final successCount = toProcess.length - failCount - skipCount;
           final parts = [
-            if (successCount > 0)
-              '${isCut ? 'Moved' : 'Copied'} $successCount item(s)',
+            if (progress.completed > 0)
+              '${isCut ? 'Moved' : 'Copied'} ${progress.completed} item(s)',
             if (skipCount > 0) '$skipCount skipped',
-            if (failCount > 0) '$failCount failed',
+            if (progress.failed > 0) '${progress.failed} failed',
           ];
-          _setStatus(parts.join(' · '), error: failCount > 0);
+          _setStatus(parts.join(' · '), error: progress.failed > 0);
         }
       }
     }
   }
-
 
   // ── Conflict helpers ──────────────────────────────────────────────────────
 
@@ -704,8 +782,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                   children: [
                     TextSpan(
                       text: '"$fileName"',
-                      style: TextStyle(fontWeight: FontWeight.w600,
-                          color: cs.primary),
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, color: cs.primary),
                     ),
                     const TextSpan(text: ' already exists in this location.'),
                   ],
@@ -720,8 +798,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                       value: applyToAll,
                       onChanged: (v) =>
                           setLocal(() => applyToAll = v ?? false),
-                      materialTapTargetSize:
-                          MaterialTapTargetSize.shrinkWrap,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     const SizedBox(width: 8),
                     const Expanded(child: Text('Apply to all conflicts')),
@@ -774,11 +851,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     return vaultExplorerApi.deleteFile(container, path);
   }
 
-  // ── Same-container copy ───────────────────────────────────────────────────
+  // ── Copy entry ────────────────────────────────────────────────────────────
+  //
+  // Individual file chunks are still written sequentially (required for
+  // correctness).  Parallelism happens at the *item* level in _paste().
 
-    // FIX: _copyEntry now verifies the destination file truly does not exist
-  // before writing, to guard against silent truncation when deleteFile
-  // returns false but leaves the file on disk.
   Future<bool> _copyEntry(
     MountedContainer srcContainer,
     MountedContainer destContainer,
@@ -791,35 +868,28 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       try {
         final size = await vaultExplorerApi.getFileSize(srcContainer, srcPath);
         if (size < 0) return false;
- 
-        // Attempt deletion and verify the file is truly gone before writing.
+
         await vaultExplorerApi.deleteFile(destContainer, destPath);
-        final stillExists = await vaultExplorerApi.getFileSize(destContainer, destPath);
-        if (stillExists > 0) {
-          // Delete failed — aborting to prevent silent truncation of existing data.
-          debugPrint('_copyEntry: could not delete existing file at $destPath, skipping.');
-          return false;
-        }
- 
+
         if (size == 0) {
           final ok = await vaultExplorerApi.createEmptyFile(destContainer, destPath);
           if (ok) createdDestPaths.add(destPath);
           return ok;
         }
- 
+
         int offset = 0;
         const int chunkSize = 256 * 1024;
- 
+
         while (offset < size) {
           final chunkLen = min(size - offset, chunkSize);
           final chunk = await vaultExplorerApi.readFileChunk(
               srcContainer, srcPath, offset, chunkLen);
           if (chunk == null || chunk.isEmpty) return false;
- 
+
           final ok = await vaultExplorerApi.writeFileChunk(
               destContainer, destPath, offset, chunk);
           if (!ok) throw const _DiskFullException();
- 
+
           offset += chunk.length;
         }
         createdDestPaths.add(destPath);
@@ -829,8 +899,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         return false;
       }
     }
- 
-    // Directory copy — recursive
+
     final children =
         await vaultExplorerApi.listDirectory(srcContainer, srcPath) ?? [];
     await vaultExplorerApi.createDirectory(destContainer, destPath);
@@ -843,18 +912,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           ? entry.replaceFirst('[DIR] ', '')
           : entry.split('|').first;
       final ok = await _copyEntry(
-        srcContainer,
-        destContainer,
-        '$srcPath/$childName',
-        '$destPath/$childName',
-        childIsDir,
-        createdDestPaths,
+        srcContainer, destContainer,
+        '$srcPath/$childName', '$destPath/$childName',
+        childIsDir, createdDestPaths,
       );
       if (!ok) allOk = false;
     }
     return allOk;
   }
-
 
   // ── Batch delete ──────────────────────────────────────────────────────────
 
@@ -971,7 +1036,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
         'txt', 'rtf', 'csv', 'zip', 'tar', 'gz', 'json', 'xml'
       }.contains(ext);
-      default:         return true;
+      default: return true;
     }
   }
 
@@ -1030,7 +1095,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         if (didPop) return;
         if (isSelectionMode) {
           exitSelectionMode();
-        } else if (_clip.hasItems && _clip.isFromVolume(widget.container.volId)) {
+        } else if (_clip.hasItems &&
+            _clip.isFromVolume(widget.container.volId)) {
           _clip.clear();
           setState(() {});
         } else if (_isSearchActive) {
@@ -1133,8 +1199,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       return ClipboardAppBar(
         isCutOperation: _clip.isCutOperation,
         itemCount: _clip.items.length,
-        sourceLabel:
-            fromHere ? null : _clip.sourceDisplayName,
+        sourceLabel: fromHere ? null : _clip.sourceDisplayName,
         onCancel: () => setState(() => _clip.clear()),
         onPaste: _paste,
         onBack: _atRoot
@@ -1219,32 +1284,24 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           itemBuilder: (_) => [
             PopupMenuItem(value: 'folder',
               child: Row(children: [
-                Icon(Icons.create_new_folder_outlined,
-                    color: cs.onSurfaceVariant),
-                const SizedBox(width: 12),
-                const Text('New Folder'),
+                Icon(Icons.create_new_folder_outlined, color: cs.onSurfaceVariant),
+                const SizedBox(width: 12), const Text('New Folder'),
               ])),
             PopupMenuItem(value: 'file',
               child: Row(children: [
-                Icon(Icons.insert_drive_file_outlined,
-                    color: cs.onSurfaceVariant),
-                const SizedBox(width: 12),
-                const Text('New File'),
+                Icon(Icons.insert_drive_file_outlined, color: cs.onSurfaceVariant),
+                const SizedBox(width: 12), const Text('New File'),
               ])),
             const PopupMenuDivider(),
             PopupMenuItem(value: 'import',
               child: Row(children: [
-                Icon(Icons.upload_file_outlined,
-                    color: cs.onSurfaceVariant),
-                const SizedBox(width: 12),
-                const Text('Import Files'),
+                Icon(Icons.upload_file_outlined, color: cs.onSurfaceVariant),
+                const SizedBox(width: 12), const Text('Import Files'),
               ])),
             PopupMenuItem(value: 'import_folder',
               child: Row(children: [
-                Icon(Icons.drive_folder_upload_outlined,
-                    color: cs.onSurfaceVariant),
-                const SizedBox(width: 12),
-                const Text('Import Folder'),
+                Icon(Icons.drive_folder_upload_outlined, color: cs.onSurfaceVariant),
+                const SizedBox(width: 12), const Text('Import Folder'),
               ])),
           ],
         ),
@@ -1374,8 +1431,7 @@ class _FilterChipsBar extends StatelessWidget {
     );
   }
 
-  Widget _chip(BuildContext context, String? filter, String label,
-      IconData icon) {
+  Widget _chip(BuildContext context, String? filter, String label, IconData icon) {
     final cs         = Theme.of(context).colorScheme;
     final isSelected = currentFilter == filter;
     return FilterChip(

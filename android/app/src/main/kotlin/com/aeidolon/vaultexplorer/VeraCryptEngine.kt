@@ -53,4 +53,8 @@ object VeraCryptEngine {
 
     @JvmStatic
 external fun readFileChunkDirectNative(fd: Int, password: String, pim: Int, targetFileName: String, offset: Long, buffer: ByteArray, length: Int, volId: Int): Int
+
+@JvmStatic external fun openStreamNative(fd: Int, password: String, pim: Int, targetFileName: String, volId: Int): Long
+@JvmStatic external fun readStreamNative(streamPtr: Long, offset: Long, buffer: ByteArray, length: Int, volId: Int): Int
+@JvmStatic external fun closeStreamNative(streamPtr: Long, volId: Int)
 }

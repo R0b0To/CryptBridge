@@ -405,17 +405,18 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
 
         private var hasChanges = false
         private var fileSizeCached: Long = -1L
-
-        // REMOVED sessionPfd! C++ already holds the file descriptor open from the unlock phase.
+        private var streamPtr: Long = 0L // Holds the C++ FIL* pointer
 
         init {
             try {
                 synchronized(VeraCryptSession.locks[volId]) {
-                    // Pass -1 for FD; C++ will use its cached activeFd
-                    fileSizeCached = VeraCryptEngine.getFileSizeNative(
-                        -1, "", 0, fatPath, volId)
+                    fileSizeCached = VeraCryptEngine.getFileSizeNative(-1, "", 0, fatPath, volId)
+                    if (fileSizeCached < 0) fileSizeCached = 0L
+                    
+                    if (!isWrite) {
+                        streamPtr = VeraCryptEngine.openStreamNative(-1, "", 0, fatPath, volId)
+                    }
                 }
-                if (fileSizeCached < 0) fileSizeCached = 0L
             } catch (e: Exception) {
                 handlerThread.quitSafely()
                 throw FileNotFoundException("VeraCrypt init failed for $fatPath: ${e.message}")
@@ -425,15 +426,12 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         override fun onGetSize(): Long = fileSizeCached
 
         override fun onRead(offset: Long, size: Int, data: ByteArray): Int {
-            if (offset >= fileSizeCached) return 0
+            if (offset >= fileSizeCached || streamPtr == 0L) return 0
             val readSize = minOf(size.toLong(), fileSizeCached - offset).toInt()
             if (readSize <= 0) return 0
 
             val actualRead = synchronized(VeraCryptSession.locks[volId]) {
-                // ZERO-COPY READ: C++ writes directly into the 'data' array.
-                VeraCryptEngine.readFileChunkDirectNative(
-                    -1, "", 0, fatPath, offset, data, readSize, volId
-                )
+                VeraCryptEngine.readStreamNative(streamPtr, offset, data, readSize, volId)
             }
             
             if (actualRead < 0) throw ErrnoException("onRead", OsConstants.EIO)
@@ -456,9 +454,16 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
             return size
         }
 
-        override fun onFsync() { /* writes are committed per-chunk */ }
+        override fun onFsync() {}
 
         override fun onRelease() {
+            synchronized(VeraCryptSession.locks[volId]) {
+                if (streamPtr != 0L) {
+                    VeraCryptEngine.closeStreamNative(streamPtr, volId)
+                    streamPtr = 0L
+                }
+            }
+            
             if (isWrite && hasChanges) {
                 val parentPath = if (fatPath.contains("/")) fatPath.substringBeforeLast("/") else ""
                 context?.contentResolver?.notifyChange(

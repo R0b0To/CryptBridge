@@ -1329,3 +1329,71 @@ Java_com_aeidolon_vaultexplorer_VeraCryptEngine_readFileChunkDirectNative(
     env->ReleaseStringUTFChars(targetFileName, targetName);
     return bytesRead;
 }
+
+
+// 1. OPEN STREAM
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_openStreamNative(
+        JNIEnv* env, jobject,
+        jint fd, jstring password, jint pim,
+        jstring targetFileName, jint volId) {
+
+    const char* nativePass = env->GetStringUTFChars(password, nullptr);
+    const char* targetName = env->GetStringUTFChars(targetFileName, nullptr);
+    jlong streamPtr = 0;
+
+    if (prepareSession(fd, nativePass, pim, volId, false)) {
+        if (ensureMounted(volId)) {
+            FIL* f = new FIL(); // Allocate on heap
+            std::string fatPath = std::string(drivePaths[volId]) + "/" + targetName;
+            
+            if (f_open(f, fatPath.c_str(), FA_READ) == FR_OK) {
+                streamPtr = reinterpret_cast<jlong>(f); // Pass pointer to Kotlin
+            } else {
+                delete f;
+            }
+        }
+    }
+
+    env->ReleaseStringUTFChars(password, nativePass);
+    env->ReleaseStringUTFChars(targetFileName, targetName);
+    return streamPtr;
+}
+
+// 2. READ STREAM (Zero-Copy)
+extern "C" JNIEXPORT jint JNICALL
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_readStreamNative(
+        JNIEnv* env, jobject,
+        jlong streamPtr, jlong offset, jbyteArray outBuffer, jint length, jint volId) {
+    
+    if (streamPtr == 0 || length <= 0) return -1;
+    
+    FIL* f = reinterpret_cast<FIL*>(streamPtr);
+    jint bytesRead = -1;
+
+    // Fast seek using already-loaded cluster chains
+    f_lseek(f, static_cast<FSIZE_t>(offset));
+
+    jbyte* destBuf = env->GetByteArrayElements(outBuffer, nullptr);
+    if (destBuf != nullptr) {
+        UINT br = 0;
+        if (f_read(f, destBuf, static_cast<UINT>(length), &br) == FR_OK) {
+            bytesRead = static_cast<jint>(br);
+        }
+        env->ReleaseByteArrayElements(outBuffer, destBuf, 0); // 0 = commit changes back
+    }
+    
+    return bytesRead;
+}
+
+// 3. CLOSE STREAM
+extern "C" JNIEXPORT void JNICALL
+Java_com_aeidolon_vaultexplorer_VeraCryptEngine_closeStreamNative(
+        JNIEnv* env, jobject, jlong streamPtr, jint volId) {
+    
+    if (streamPtr != 0) {
+        FIL* f = reinterpret_cast<FIL*>(streamPtr);
+        f_close(f);
+        delete f; // Free memory
+    }
+}
