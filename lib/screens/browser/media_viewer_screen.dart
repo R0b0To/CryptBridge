@@ -11,17 +11,6 @@ import '../../utils/raw_entry.dart';
 // Unified Video Playback Modes
 enum VideoPlaybackMode { playOnce, loop, playAndAdvance }
 
-// FIX P5: These were file-level globals shared across ALL MediaViewerScreen
-// instances for the entire app session — opening a second viewer silently
-// inherited the speed/mode/fit from the previous one.
-//
-// They are now instance fields on _MediaViewerScreenState, scoped to each
-// individual viewer session. Default values are identical to the originals.
-//
-// The old declarations are removed entirely. If cross-session persistence of
-// these preferences is wanted in the future, they should be stored explicitly
-// (e.g. SharedPreferences) with clear UX, not via accidental global leakage.
-
 class MediaViewerScreen extends StatefulWidget {
   final MountedContainer container;
   final List<String> mediaFiles;
@@ -43,18 +32,18 @@ class MediaViewerScreen extends StatefulWidget {
 class _MediaViewerScreenState extends State<MediaViewerScreen> {
   late PageController _pageController;
   late int _currentIndex;
-  bool _showUI     = true;
+  bool _showUI      = true;
   bool _isLandscape = false;
+  bool _isMenuOpen  = false; // Prevents the auto-hide timer from firing while a menu is open
 
   late List<String> _originalList;
   late List<String> _currentPlaylist;
   bool _isShuffled = false;
 
-  bool _allFilesScanned    = false;
+  bool _allFilesScanned      = false;
   bool _isScanningSubfolders = false;
   Timer? _slideshowTimer;
 
-  // FIX P5: Per-instance playback preferences (were file-level globals).
   bool _autoPlay              = true;
   bool _autoAdvance           = false;
   VideoPlaybackMode _videoPlaybackMode = VideoPlaybackMode.playOnce;
@@ -65,16 +54,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   BoxFit _imageFit              = BoxFit.contain;
   bool _isMuted                 = false;
 
-  // FIX P1: Prefetch cache now stores thumbnail-sized bytes (~15 KB each)
-  // rather than full source files (potentially many MB). The cache holds up
-  // to 5 entries — same as before — but at a fraction of the memory cost.
-  // Key: file path, Value: JPEG thumbnail bytes from getImageThumbnail().
   final Map<String, Uint8List> _prefetchedImages = {};
   final Set<String> _prefetchingActive = {};
 
   bool _subtitlesAvailable = false;
 
-  // Active video controller and playback tracking
   VideoPlayerController? _activeVideoController;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -86,25 +70,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
   final Map<String, int> _rotations = {};
 
-  // FIX P2: Controller map with bounded eviction.
-  // Previously _initializedControllers grew without bound — every video page
-  // that was ever visited kept an active MediaCodec session alive. With 100
-  // videos this meant 100 concurrent decoders.
-  //
-  // The fix: keep at most _maxLiveControllers controllers alive. When a new
-  // one is initialized and the map is full, the furthest-from-current-index
-  // controller is disposed and removed. This bounds MediaCodec usage to a
-  // small window around the current page.
   static const int _maxLiveControllers = 3;
   final Map<int, VideoPlayerController> _initializedControllers = {};
   final Map<int, bool> _subtitlesAvailableMap = {};
-
-  // FIX P3: Depth limit for recursive media scans.
-  // The FileBrowserScreen version had _maxScanDepth = 20; MediaViewerScreen's
-  // _scanDirectoryRecursively had no limit at all. Pathological containers
-  // (deep nesting, accidental circular references in some FAT tools) could
-  // cause a stack overflow or unbounded memory growth.
-  static const int _maxScanDepth = 20;
 
   @override
   void initState() {
@@ -153,7 +121,6 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   }
 
   Future<List<String>> _scanDirectoryRecursively(String baseDir, {int depth = 0}) async {
-    // Prevent stack overflow on deeply-nested or pathological containers
     if (depth > 20) return [];
 
     final foundFiles  = <String>[];
@@ -165,15 +132,13 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
         for (final item in items) {
           if (item.startsWith('System:')) continue;
           
-          // FIX: Use RawEntry to cleanly strip |size|date metadata
           final entry = RawEntry.parse(item);
           
           if (entry.isDir) {
             subdirNames.add(entry.name);
           } else {
             if (_isSupportedMedia(entry.name)) {
-              final fullPath =
-                  baseDir.isEmpty ? entry.name : '$baseDir/${entry.name}';
+              final fullPath = baseDir.isEmpty ? entry.name : '$baseDir/${entry.name}';
               foundFiles.add(fullPath);
             }
           }
@@ -279,16 +244,6 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     }
   }
 
-  /// FIX P1: Prefetch uses getImageThumbnail() to fetch a downscaled JPEG
-  /// (~15 KB) instead of reading the full source file (potentially MB).
-  ///
-  /// The full-resolution bytes are still fetched on demand by
-  /// EncryptedImageWidget when the user actually navigates to that page —
-  /// the prefetch cache is only used to eliminate the loading spinner for
-  /// the adjacent images during fast navigation.
-  ///
-  /// For non-image files (video, audio) prefetch is skipped entirely since
-  /// those are streamed on demand anyway.
   void _prefetchSurroundingItems() {
     if (_currentPlaylist.isEmpty) return;
     final next = _currentIndex + 1;
@@ -298,16 +253,12 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   }
 
   Future<void> _prefetchThumbnail(String fileName) async {
-    // Only prefetch images; video/audio are streamed on demand.
     if (!_isImageFile(fileName)) return;
     if (_prefetchedImages.containsKey(fileName) ||
         _prefetchingActive.contains(fileName)) return;
 
     _prefetchingActive.add(fileName);
     try {
-      // FIX P1: Use the native thumbnail API (BitmapFactory inSampleSize
-      // subsampling) instead of readFileChunk(fullSize). This transfers
-      // ~15 KB over JNI rather than the full source file.
       final thumbBytes = await vaultExplorerApi.getImageThumbnail(
           widget.container, fileName, targetSize: 360);
       if (thumbBytes != null && thumbBytes.isNotEmpty && mounted) {
@@ -319,8 +270,6 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       _prefetchingActive.remove(fileName);
     }
   }
-
-  // ── FIX P2: Controller lifecycle with bounded eviction ────────────────────
 
   void _setActiveController(VideoPlayerController? controller) {
     if (_activeVideoController != null) {
@@ -339,14 +288,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     }
   }
 
-  /// FIX P2: Evicts the controller furthest from [currentIndex] when the
-  /// live-controller count would exceed [_maxLiveControllers].
-  ///
-  /// This bounds active MediaCodec sessions to a small window around the
-  /// current page regardless of how many video pages have been visited.
   void _evictDistantControllers(int currentIndex) {
     while (_initializedControllers.length >= _maxLiveControllers) {
-      // Find the page index with the greatest distance from currentIndex.
       int furthestIndex = -1;
       int maxDistance   = -1;
       for (final pageIndex in _initializedControllers.keys) {
@@ -361,7 +304,6 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       _subtitlesAvailableMap.remove(furthestIndex);
       if (evicted != null) {
         evicted.removeListener(_onControllerUpdate);
-        // Dispose asynchronously to avoid blocking the UI thread.
         Future.microtask(() {
           try { evicted.dispose(); } catch (_) {}
         });
@@ -414,9 +356,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
   void _startHideTimer() {
     _hideTimer?.cancel();
+    if (_isMenuOpen) return; // Prevent automatic dismissal if menu is open
     _hideTimer = Timer(const Duration(seconds: 3), () {
       if (mounted && _activeVideoController != null &&
-          _activeVideoController!.value.isPlaying && _showUI) {
+          _activeVideoController!.value.isPlaying && _showUI && !_isMenuOpen) {
         _setUIVisibility(false);
       }
     });
@@ -435,7 +378,6 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     if (_activeVideoController != null) {
       _activeVideoController!.removeListener(_onControllerUpdate);
     }
-    // FIX P2: Dispose all remaining controllers on screen exit.
     for (final ctrl in _initializedControllers.values) {
       try { ctrl.dispose(); } catch (_) {}
     }
@@ -506,7 +448,6 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       setState(() => _isScanningSubfolders = true);
       try {
         final baseDir = _getBaseDir();
-        // FIX P3: depth parameter propagated through the call chain.
         final recursiveFiles = await _scanDirectoryRecursively(baseDir);
 
         if (mounted) {
@@ -616,6 +557,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   Widget _buildImageFitMenu(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return MenuAnchor(
+      onOpen: () { _isMenuOpen = true; _hideTimer?.cancel(); },
+      onClose: () { _isMenuOpen = false; _startHideTimer(); },
       style: MenuStyle(
         backgroundColor: WidgetStateProperty.all(Colors.black.withValues(alpha:0.9)),
         shape: WidgetStateProperty.all(
@@ -644,6 +587,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   Widget _fitMenuItem(BoxFit fit, String label, IconData icon) {
     final isSelected = _imageFit == fit;
     return MenuItemButton(
+      closeOnActivate: false, // Settings won't abruptly dismiss while clicking
       style: MenuItemButton.styleFrom(
         foregroundColor: isSelected ? Theme.of(context).colorScheme.primary : Colors.white,
       ),
@@ -668,6 +612,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   Widget _buildVideoPlaybackModeMenu(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return MenuAnchor(
+      onOpen: () { _isMenuOpen = true; _hideTimer?.cancel(); },
+      onClose: () { _isMenuOpen = false; _startHideTimer(); },
       style: MenuStyle(
         backgroundColor: WidgetStateProperty.all(Colors.black.withValues(alpha:0.9)),
         shape: WidgetStateProperty.all(
@@ -702,6 +648,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   Widget _playbackModeItem(VideoPlaybackMode mode, String label, IconData icon) {
     final isSelected = _videoPlaybackMode == mode;
     return MenuItemButton(
+      closeOnActivate: false, // Prevents menu disappearing on touch
       style: MenuItemButton.styleFrom(
         foregroundColor: isSelected ? Theme.of(context).colorScheme.primary : Colors.white,
       ),
@@ -718,6 +665,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   Widget _buildImageBottomControls(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final currentName = _currentPlaylist[_currentIndex];
+    
+    final bool isFirst = _currentIndex == 0;
+    final bool isLast = _currentIndex == _currentPlaylist.length - 1;
+
     return _buildGlassDock(
       context,
       children: [
@@ -767,8 +718,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.skip_previous_rounded, color: Colors.white, size: 28),
-                  onPressed: _navigateToPrev,
+                  icon: Icon(Icons.skip_previous_rounded, color: isFirst ? Colors.white38 : Colors.white, size: 28),
+                  onPressed: isFirst ? null : _navigateToPrev,
                 ),
                 const SizedBox(width: 8),
                 GestureDetector(
@@ -788,8 +739,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 28),
-                  onPressed: _navigateToNext,
+                  icon: Icon(Icons.skip_next_rounded, color: isLast ? Colors.white38 : Colors.white, size: 28),
+                  onPressed: isLast ? null : _navigateToNext,
                 ),
               ],
             ),
@@ -804,6 +755,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     final cs           = Theme.of(context).colorScheme;
     final positionStr  = _formatDuration(_position);
     final durationStr  = _formatDuration(_duration);
+    final currentName  = _currentPlaylist[_currentIndex];
+
+    final bool isFirst = _currentIndex == 0;
+    final bool isLast = _currentIndex == _currentPlaylist.length - 1;
 
     return _buildGlassDock(
       context,
@@ -876,6 +831,16 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                         },
                       ),
                       _buildVideoPlaybackModeMenu(context),
+                      IconButton(
+                        icon: const Icon(Icons.rotate_right_rounded, color: Colors.white70, size: 20),
+                        tooltip: 'Rotate 90°',
+                        onPressed: () {
+                          HapticFeedback.mediumImpact();
+                          setState(() {
+                            _rotations[currentName] = ((_rotations[currentName] ?? 0) + 1) % 4;
+                          });
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -885,8 +850,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.skip_previous_rounded, color: Colors.white, size: 28),
-                  onPressed: _navigateToPrev,
+                  icon: Icon(Icons.skip_previous_rounded, color: isFirst ? Colors.white38 : Colors.white, size: 28),
+                  onPressed: isFirst ? null : _navigateToPrev,
                 ),
                 const SizedBox(width: 8),
                 GestureDetector(
@@ -916,8 +881,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 28),
-                  onPressed: _navigateToNext,
+                  icon: Icon(Icons.skip_next_rounded, color: isLast ? Colors.white38 : Colors.white, size: 28),
+                  onPressed: isLast ? null : _navigateToNext,
                 ),
               ],
             ),
@@ -945,6 +910,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                         ),
                       _SpeedControlMenu(
                         currentSpeed: _playbackSpeed,
+                        onMenuOpen: () { _isMenuOpen = true; _hideTimer?.cancel(); },
+                        onMenuClose: () { _isMenuOpen = false; _startHideTimer(); },
                         onSpeedChanged: (speed) {
                           setState(() {
                             _playbackSpeed = speed;
@@ -1000,8 +967,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
           },
           itemBuilder: (context, index) {
             final volId       = widget.container.volId;
-            final escapedPath =
-                Uri.encodeComponent(_currentPlaylist[index]);
+            final escapedPath = Uri.encodeComponent(_currentPlaylist[index]);
             final contentUriString =
                 'content://com.aeidolon.vaultexplorer.documents/document/'
                 '$volId%3Afile%3A$escapedPath';
@@ -1019,10 +985,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
               autoPlay: _autoPlay,
               prefetchedBytes: prefetchedBytes,
               rotationQuarterTurns: _rotations[fileName] ?? 0,
-              onImageLoaded: (bytes) {
-                // FIX: Do not cache the full-resolution bytes returned by EncryptedImageWidget.
-                // The _prefetchedImages cache is exclusively for low-res thumbnails to save memory.
-              },
+              onImageLoaded: (bytes) {},
               onZoomChanged: (allowSwipe) {},
               subtitlesEnabled: _subtitlesEnabled,
               imageFit: _imageFit,
@@ -1033,7 +996,6 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                 }
               },
               onVideoControllerInitialized: (controller) {
-                // FIX P2: Evict distant controllers before registering the new one.
                 _evictDistantControllers(index);
                 _initializedControllers[index] = controller;
                 if (index == _currentIndex) {
@@ -1058,13 +1020,13 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
           top: _showUI ? MediaQuery.of(context).padding.top + 8 : -110,
           left: 16, right: 16,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(24), // M3 smoother corner rounding
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha:0.6),
+                  color: Colors.black.withValues(alpha:0.65),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(color: Colors.white.withValues(alpha:0.08)),
                 ),
@@ -1083,16 +1045,17 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(currentName.split('/').last,
+                            maxLines: 2, // Wrapping nicely on 2 lines prevents abrupt ellipse truncation
                             style: const TextStyle(
-                                color: Colors.white, fontSize: 13,
+                                color: Colors.white, fontSize: 14, height: 1.25,
                                 fontWeight: FontWeight.w600),
                             overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 1),
+                        const SizedBox(height: 2),
                         Text(
                           '${_currentIndex + 1} of $total'
                           '${_isScanningSubfolders ? '  ·  scanning…' : ''}',
                           style: TextStyle(
-                              color: Colors.white.withValues(alpha:0.6), fontSize: 10),
+                              color: Colors.white.withValues(alpha:0.7), fontSize: 11),
                         ),
                       ],
                     ),
@@ -1103,6 +1066,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                     onPressed: _deleteCurrentFile,
                   ),
                   MenuAnchor(
+                    onOpen: () { _isMenuOpen = true; _hideTimer?.cancel(); },
+                    onClose: () { _isMenuOpen = false; _startHideTimer(); },
                     style: MenuStyle(
                       backgroundColor: WidgetStateProperty.all(Colors.black.withValues(alpha:0.9)),
                       elevation: WidgetStateProperty.all(12),
@@ -1219,7 +1184,7 @@ Widget _buildGlassDock(BuildContext context, {required List<Widget> children}) {
       bottom: MediaQuery.of(context).padding.bottom + 16,
     ),
     decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: BorderRadius.circular(28), // Sleek M3 pill-shaped borders
       boxShadow: [
         BoxShadow(
           color: Colors.black.withValues(alpha:0.4),
@@ -1385,6 +1350,7 @@ class _MediaPageState extends State<_MediaPage> {
               autoPlay: widget.autoPlay,
               isAudio: isAudio,
               subtitlesEnabled: widget.subtitlesEnabled,
+              rotationQuarterTurns: widget.rotationQuarterTurns, // Added rotation pass-through for Videos
               onSubtitlesAvailableChanged: widget.onSubtitlesAvailableChanged,
               onZoomChanged: widget.onZoomChanged,
               onVideoControllerInitialized: widget.onVideoControllerInitialized,
@@ -1424,19 +1390,15 @@ class _EncryptedImageWidgetState extends State<EncryptedImageWidget> {
   @override
   void initState() {
     super.initState();
-    // 1. Immediately display the prefetched thumbnail (if available)
     if (widget.prefetchedBytes != null) {
       _bytes = widget.prefetchedBytes;
     }
-    
-    // 2. ALWAYS fetch the full-resolution image in the background.
     _loadImage();
   }
 
   @override
   void didUpdateWidget(covariant EncryptedImageWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Handle widget recycling in PageView correctly
     if (widget.fileName != oldWidget.fileName) {
       _isFullResLoaded = false;
       _bytes = widget.prefetchedBytes;
@@ -1459,13 +1421,12 @@ class _EncryptedImageWidgetState extends State<EncryptedImageWidget> {
       
       if (mounted) {
         setState(() {
-          _bytes = data; // Seamlessly replaces the thumbnail with full res
+          _bytes = data;
           _isFullResLoaded = true;
         });
         widget.onImageLoaded(data);
       }
     } catch (e) {
-      // Fallback: Only show the error UI if we don't even have a thumbnail to display
       if (mounted && _bytes == null) {
         setState(() => _error = 'Failed to load encrypted image: $e');
       }
@@ -1576,17 +1537,23 @@ class _AudioVisualizerState extends State<_AudioVisualizer>
 class _SpeedControlMenu extends StatelessWidget {
   final double currentSpeed;
   final ValueChanged<double> onSpeedChanged;
+  final VoidCallback onMenuOpen;
+  final VoidCallback onMenuClose;
 
   const _SpeedControlMenu({
     Key? key,
     required this.currentSpeed,
     required this.onSpeedChanged,
+    required this.onMenuOpen,
+    required this.onMenuClose,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return MenuAnchor(
+      onOpen: onMenuOpen,
+      onClose: onMenuClose,
       style: MenuStyle(
         backgroundColor: WidgetStateProperty.all(Colors.black.withValues(alpha:0.9)),
         shape: WidgetStateProperty.all(
@@ -1611,6 +1578,7 @@ class _SpeedControlMenu extends StatelessWidget {
       ),
       menuChildren: [0.5, 1.0, 1.25, 1.5, 2.0].map((speed) =>
         MenuItemButton(
+          closeOnActivate: false, // Prevents menu dismissing immediately while rapid-testing speeds
           style: MenuItemButton.styleFrom(
             foregroundColor: currentSpeed == speed ? cs.primary : Colors.white,
           ),
@@ -1640,6 +1608,7 @@ class MediaPlayerWidget extends StatefulWidget {
   final bool autoPlay;
   final bool isAudio;
   final bool subtitlesEnabled;
+  final int rotationQuarterTurns;
   final ValueChanged<bool> onSubtitlesAvailableChanged;
   final ValueChanged<VideoPlayerController> onVideoControllerInitialized;
   final VoidCallback onVideoControllerDisposed;
@@ -1656,6 +1625,7 @@ class MediaPlayerWidget extends StatefulWidget {
     required this.autoPlay,
     required this.isAudio,
     required this.subtitlesEnabled,
+    required this.rotationQuarterTurns,
     required this.onSubtitlesAvailableChanged,
     required this.onVideoControllerInitialized,
     required this.onVideoControllerDisposed,
@@ -1673,10 +1643,7 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
   bool _showLeftIndicator  = false;
   bool _showRightIndicator = false;
   bool _isSpeedHeld        = false;
-
-  // FIX P5: Read isMuted from the parent's instance field via the controller
-  // callback chain. We keep a local copy for the UI toggle.
-  bool _localMuted = false;
+  bool _localMuted         = false;
 
   final TransformationController _videoTransformationController =
       TransformationController();
@@ -1765,9 +1732,7 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
 
   void _onSpeedHoldEnd(LongPressEndDetails _) {
     if (!_initialized) return;
-    // Restore to the speed set in the parent's per-instance field — accessed
-    // via the controller which the parent has already configured.
-    _controller.setPlaybackSpeed(1.0); // will be overridden by parent on next build
+    _controller.setPlaybackSpeed(1.0);
     setState(() => _isSpeedHeld = false);
     widget.onToggleUI(true);
   }
@@ -1876,17 +1841,27 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
           valueColor: AlwaysStoppedAnimation<Color>(cs.primary)));
     }
 
+    // Determine correct Aspect Ratio accounting for manual video rotation inversion constraints
+    final isRotated = widget.rotationQuarterTurns % 2 != 0;
+    final double computedAspectRatio = widget.isAudio 
+        ? 0.8 
+        : (isRotated 
+            ? 1.0 / _controller.value.aspectRatio 
+            : _controller.value.aspectRatio);
+
     Widget corePlayerWidget = Center(
       child: AspectRatio(
-        aspectRatio:
-            widget.isAudio ? 0.8 : _controller.value.aspectRatio,
+        aspectRatio: computedAspectRatio,
         child: Stack(alignment: Alignment.center, children: [
           if (widget.isAudio)
             _buildAudioCenterVisual()
           else
-            VideoPlayer(_controller),
-          if (!widget.isAudio && _controller.value.isInitialized &&
-              widget.subtitlesEnabled)
+            RotatedBox(
+              quarterTurns: widget.rotationQuarterTurns,
+              child: VideoPlayer(_controller),
+            ),
+          
+          if (!widget.isAudio && _controller.value.isInitialized && widget.subtitlesEnabled)
             Positioned(
               bottom: widget.showUI ? 130 : 25,
               left: 20, right: 20,
@@ -1899,6 +1874,7 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
                     ]),
               ),
             ),
+          
           Row(children: [
             Expanded(flex: 3,
               child: GestureDetector(
