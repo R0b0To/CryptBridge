@@ -269,7 +269,6 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                     initialValue: _unlockMethod,
                     decoration: InputDecoration(
                       labelText: 'How to unlock',
-                      prefixIcon: Icon(_unlockMethod.icon, size: 18),
                     ),
                     items: ContainerUnlockMethod.values
                         .where((m) =>
@@ -413,7 +412,7 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 _SectionHeader('AUTO-LOCK', cs),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<int>(
-                  value: _autoCloseMins,
+                  initialValue: _autoCloseMins,
                   decoration: const InputDecoration(
                     labelText: 'Lock container after',
                     prefixIcon: Icon(Icons.timer_rounded, size: 18),
@@ -458,7 +457,7 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                           child: CircularProgressIndicator(strokeWidth: 2)))
                 else
                   DropdownButtonFormField<ThumbnailCacheMode?>(
-                    value: _thumbnailCacheMode,
+                    initialValue: _thumbnailCacheMode,
                     decoration: const InputDecoration(
                       labelText: 'Thumbnail Cache Mode',
                       prefixIcon: Icon(Icons.cached_rounded, size: 18),

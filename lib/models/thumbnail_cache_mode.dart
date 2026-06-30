@@ -40,7 +40,7 @@ enum ThumbnailCacheMode {
   String get description {
     switch (this) {
       case ThumbnailCacheMode.appCache:
-        return 'Stored unencrypted in the OS cache folder. '
+        return 'Stored encrypted in the OS cache folder. '
             'Fast; cleared automatically under storage pressure.';
       case ThumbnailCacheMode.inContainer:
         return 'Stored inside the encrypted container. '

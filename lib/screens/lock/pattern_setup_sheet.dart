@@ -30,11 +30,12 @@ class _PatternSetupSheetState extends State<PatternSetupSheet> {
         _showError = true;
       });
       Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _showError = false;
             _resetKey++;
           });
+        }
       });
       return;
     }

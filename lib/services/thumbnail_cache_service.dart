@@ -213,7 +213,6 @@ class ThumbnailCacheService {
         putInMemory(container, filePath, decrypted);
         return decrypted;
       } else {
-        // inContainer: stored unencrypted inside the FAT filesystem.
         final cachePath = '$inContainerDir/${_encodeKey(filePath)}';
         final size = await vaultExplorerApi.getFileSize(container, cachePath);
         if (size <= 0) return null;
