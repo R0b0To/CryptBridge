@@ -9,7 +9,6 @@ import '../../../utils/file_type_utils.dart';
 import '../../../utils/lru_cache.dart';
 import '../../../utils/raw_entry.dart';
 
-
 /// A dynamic gallery grid for the file browser supporting pinch-to-zoom.
 class FileGridView extends StatefulWidget {
   final MountedContainer container;
@@ -64,10 +63,13 @@ class _FileGridViewState extends State<FileGridView> {
 
   double _getAspectRatio(int columns) {
     switch (columns) {
-      case 1:  return 1.45;
-      case 2:  return 0.95;
+      case 1:
+        return 1.45;
+      case 2:
+        return 0.95;
       case 3:
-      default: return 0.74;
+      default:
+        return 0.74;
     }
   }
 
@@ -76,7 +78,7 @@ class _FileGridViewState extends State<FileGridView> {
   }
 
   void _handleScaleUpdate(ScaleUpdateDetails details) {
-    final scale  = details.scale;
+    final scale = details.scale;
     final factor = scale / _baselineScale;
 
     if (factor > 1.35) {
@@ -117,7 +119,9 @@ class _FileGridViewState extends State<FileGridView> {
             return _buildDirCell(context, widget.dirs[index]);
           }
           return _buildFileCell(
-              context, widget.files[index - widget.dirs.length]);
+            context,
+            widget.files[index - widget.dirs.length],
+          );
         },
       ),
     );
@@ -126,7 +130,7 @@ class _FileGridViewState extends State<FileGridView> {
   Widget _buildDirCell(BuildContext context, String rawItem) {
     final name = RawEntry.parse(rawItem).name;
     final isSelected = widget.selectedItems.contains(rawItem);
-    final cs         = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
 
     return _GridCell(
       isSelected: isSelected,
@@ -145,10 +149,10 @@ class _FileGridViewState extends State<FileGridView> {
   }
 
   Widget _buildFileCell(BuildContext context, String rawItem) {
-    final parts     = rawItem.split('|');
+    final parts = rawItem.split('|');
     final cleanName = parts.first;
-    final fileSize  = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-    final fullPath  = widget.currentDirPath.isEmpty
+    final fileSize = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final fullPath = widget.currentDirPath.isEmpty
         ? cleanName
         : '${widget.currentDirPath}/$cleanName';
     final isSelected = widget.selectedItems.contains(rawItem);
@@ -220,7 +224,7 @@ class _GridCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return GestureDetector(
@@ -251,14 +255,16 @@ class _GridCell extends StatelessWidget {
                     if (isSelected)
                       DecoratedBox(
                         decoration: BoxDecoration(
-                            color: cs.primary.withValues(alpha: 0.12)),
+                          color: cs.primary.withValues(alpha: 0.12),
+                        ),
                         child: Align(
                           alignment: Alignment.topRight,
                           child: Padding(
                             padding: const EdgeInsets.all(6),
                             child: _CheckBadge(
-                                color: cs.primary,
-                                onColor: cs.onPrimary),
+                              color: cs.primary,
+                              onColor: cs.onPrimary,
+                            ),
                           ),
                         ),
                       ),
@@ -274,17 +280,23 @@ class _GridCell extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: cs.onSurface)),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: cs.onSurface,
+                      ),
+                    ),
                     if (sublabel != null) ...[
                       const SizedBox(height: 2),
-                      Text(sublabel!,
-                          style: textTheme.labelSmall
-                              ?.copyWith(color: cs.onSurfaceVariant)),
+                      Text(
+                        sublabel!,
+                        style: textTheme.labelSmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -304,17 +316,17 @@ class _CheckBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        child: Icon(Icons.check_rounded, size: 12, color: onColor),
-      );
+    padding: const EdgeInsets.all(3),
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    child: Icon(Icons.check_rounded, size: 12, color: onColor),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic async thumbnail loader
 // ─────────────────────────────────────────────────────────────────────────────
 
-typedef _FetchFn   = Future<Uint8List> Function(MountedContainer, String);
+typedef _FetchFn = Future<Uint8List> Function(MountedContainer, String);
 typedef _SyncLookup = Uint8List? Function();
 
 class _AsyncThumb extends StatefulWidget {
@@ -344,7 +356,7 @@ class _AsyncThumb extends StatefulWidget {
 class _AsyncThumbState extends State<_AsyncThumb> {
   Uint8List? _bytes;
   bool _isLoading = true;
-  bool _hasError  = false;
+  bool _hasError = false;
 
   Completer<void>? _limiterCompleter;
   String? _loadingPath;
@@ -360,7 +372,7 @@ class _AsyncThumbState extends State<_AsyncThumb> {
     super.initState();
     final syncBytes = widget.syncLookup?.call();
     if (syncBytes != null) {
-      _bytes    = syncBytes;
+      _bytes = syncBytes;
       _isLoading = false;
     } else {
       _load();
@@ -375,15 +387,15 @@ class _AsyncThumbState extends State<_AsyncThumb> {
       final syncBytes = widget.syncLookup?.call();
       if (syncBytes != null) {
         setState(() {
-          _bytes     = syncBytes;
+          _bytes = syncBytes;
           _isLoading = false;
-          _hasError  = false;
+          _hasError = false;
         });
       } else {
         setState(() {
-          _bytes     = null;
+          _bytes = null;
           _isLoading = true;
-          _hasError  = false;
+          _hasError = false;
         });
         _load();
       }
@@ -413,14 +425,18 @@ class _AsyncThumbState extends State<_AsyncThumb> {
 
   Future<void> _load() async {
     final targetPath = widget.filePath;
-    _loadingPath     = targetPath;
-    final cacheKey   = '${widget.container.volId}:${widget.container.mountedAt.millisecondsSinceEpoch}:$targetPath';
+    _loadingPath = targetPath;
+    final cacheKey =
+        '${widget.container.volId}:${widget.container.mountedAt.millisecondsSinceEpoch}:$targetPath';
 
     var future = widget.cache[cacheKey];
 
     if (future == null) {
       if (mounted) {
-        setState(() { _isLoading = true; _hasError = false; });
+        setState(() {
+          _isLoading = true;
+          _hasError = false;
+        });
       }
 
       await Future.delayed(widget.debounce);
@@ -428,7 +444,12 @@ class _AsyncThumbState extends State<_AsyncThumb> {
 
       final syncBytes = widget.syncLookup?.call();
       if (syncBytes != null) {
-        if (mounted && !_disposed) setState(() { _bytes = syncBytes; _isLoading = false; });
+        if (mounted && !_disposed) {
+          setState(() {
+            _bytes = syncBytes;
+            _isLoading = false;
+          });
+        }
         return;
       }
 
@@ -450,19 +471,27 @@ class _AsyncThumbState extends State<_AsyncThumb> {
     try {
       final data = await future;
       if (targetPath != _loadingPath || !mounted || _disposed) return;
-      setState(() { _bytes = data; _isLoading = false; });
+      setState(() {
+        _bytes = data;
+        _isLoading = false;
+      });
     } catch (_) {
       if (targetPath == _loadingPath && mounted && !_disposed) {
-        setState(() { _isLoading = false; _hasError = true; });
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
       }
     }
   }
 
   Future<Uint8List> _fetchWithQueue(
-      MountedContainer container, String targetPath) async {
-    final completer  = Completer<void>();
+    MountedContainer container,
+    String targetPath,
+  ) async {
+    final completer = Completer<void>();
     _limiterCompleter = completer;
-    bool acquired    = false;
+    bool acquired = false;
 
     try {
       await widget.limiter.acquire(completer);
@@ -492,10 +521,12 @@ class _AsyncThumbState extends State<_AsyncThumb> {
         color: cs.surfaceContainerLow,
         child: Center(
           child: SizedBox(
-            width: 18, height: 18,
+            width: 18,
+            height: 18,
             child: CircularProgressIndicator(
-                strokeWidth: 1.5,
-                color: cs.primary.withValues(alpha: 0.6)),
+              strokeWidth: 1.5,
+              color: cs.primary.withValues(alpha: 0.6),
+            ),
           ),
         ),
       );
@@ -512,11 +543,11 @@ class _AsyncThumbState extends State<_AsyncThumb> {
   }
 
   Widget _errorPlaceholder(ColorScheme cs) => Container(
-        color: cs.surfaceContainerLow,
-        child: Center(
-            child: Icon(Icons.broken_image_rounded,
-                size: 28, color: cs.outline)),
-      );
+    color: cs.surfaceContainerLow,
+    child: Center(
+      child: Icon(Icons.broken_image_rounded, size: 28, color: cs.outline),
+    ),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -524,7 +555,7 @@ class _AsyncThumbState extends State<_AsyncThumb> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EncryptedImageGridThumb extends StatelessWidget {
-  static final _cache   = LruCache<String, Future<Uint8List>>(60);
+  static final _cache = LruCache<String, Future<Uint8List>>(60);
   static final _limiter = ConcurrencyLimiter(2);
 
   final MountedContainer container;
@@ -544,18 +575,28 @@ class _EncryptedImageGridThumb extends StatelessWidget {
   ) async {
     if (mode != ThumbnailCacheMode.disabled) {
       final cached = await ThumbnailCacheService.get(
-          container: container, filePath: path, mode: mode);
+        container: container,
+        filePath: path,
+        mode: mode,
+      );
       if (cached != null && cached.isNotEmpty) return cached;
     }
 
-    Uint8List? thumbBytes =
-        await vaultExplorerApi.getImageThumbnail(container, path, targetSize: 180);
+    Uint8List? thumbBytes = await vaultExplorerApi.getImageThumbnail(
+      container,
+      path,
+      targetSize: 180,
+    );
 
     if (thumbBytes == null || thumbBytes.isEmpty) {
       final size = await vaultExplorerApi.getFileSize(container, path);
       if (size <= 0) throw Exception('Empty file: $path');
-      final raw =
-          await vaultExplorerApi.readFileChunk(container, path, 0, size);
+      final raw = await vaultExplorerApi.readFileChunk(
+        container,
+        path,
+        0,
+        size,
+      );
       if (raw == null || raw.isEmpty) throw Exception('Read failed: $path');
       if (raw.length < 200 * 1024) {
         ThumbnailCacheService.putInMemory(container, path, raw);
@@ -565,8 +606,14 @@ class _EncryptedImageGridThumb extends StatelessWidget {
 
     ThumbnailCacheService.putInMemory(container, path, thumbBytes);
     if (mode != ThumbnailCacheMode.disabled) {
-      unawaited(ThumbnailCacheService.put(
-          container: container, filePath: path, data: thumbBytes, mode: mode));
+      unawaited(
+        ThumbnailCacheService.put(
+          container: container,
+          filePath: path,
+          data: thumbBytes,
+          mode: mode,
+        ),
+      );
     }
 
     return thumbBytes;
@@ -574,16 +621,15 @@ class _EncryptedImageGridThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _AsyncThumb(
-        key: ValueKey('img:$filePath'),
-        container: container,
-        filePath: filePath,
-        cache: _cache,
-        limiter: _limiter,
-        fetchFn: (c, p) => _fetch(c, p, cacheMode),
-        debounce: const Duration(milliseconds: 100),
-        syncLookup: () =>
-            ThumbnailCacheService.getFromMemory(container, filePath),
-      );
+    key: ValueKey('img:$filePath'),
+    container: container,
+    filePath: filePath,
+    cache: _cache,
+    limiter: _limiter,
+    fetchFn: (c, p) => _fetch(c, p, cacheMode),
+    debounce: const Duration(milliseconds: 100),
+    syncLookup: () => ThumbnailCacheService.getFromMemory(container, filePath),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -591,7 +637,7 @@ class _EncryptedImageGridThumb extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _VideoThumb extends StatelessWidget {
-  static final _cache   = LruCache<String, Future<Uint8List>>(100);
+  static final _cache = LruCache<String, Future<Uint8List>>(100);
   static final _limiter = ConcurrencyLimiter(1);
 
   final MountedContainer container;
@@ -611,7 +657,10 @@ class _VideoThumb extends StatelessWidget {
   ) async {
     if (mode != ThumbnailCacheMode.disabled) {
       final cached = await ThumbnailCacheService.get(
-          container: container, filePath: path, mode: mode);
+        container: container,
+        filePath: path,
+        mode: mode,
+      );
       if (cached != null && cached.isNotEmpty) return cached;
     }
 
@@ -620,8 +669,14 @@ class _VideoThumb extends StatelessWidget {
 
     ThumbnailCacheService.putInMemory(container, path, data);
     if (mode != ThumbnailCacheMode.disabled) {
-      unawaited(ThumbnailCacheService.put(
-          container: container, filePath: path, data: data, mode: mode));
+      unawaited(
+        ThumbnailCacheService.put(
+          container: container,
+          filePath: path,
+          data: data,
+          mode: mode,
+        ),
+      );
     }
 
     return data;
@@ -649,9 +704,11 @@ class _VideoThumb extends StatelessWidget {
           alignment: Alignment.bottomRight,
           child: Padding(
             padding: const EdgeInsets.all(6.0),
-            child: Icon(Icons.play_circle_outline_rounded,
-                size: 16,
-                color: cs.onSurface.withValues(alpha: 0.7)),
+            child: Icon(
+              Icons.play_circle_outline_rounded,
+              size: 16,
+              color: cs.onSurface.withValues(alpha: 0.7),
+            ),
           ),
         ),
       ],

@@ -24,7 +24,11 @@ class EmptyState extends StatelessWidget {
                 color: cs.surfaceContainer,
                 border: Border.all(color: cs.outlineVariant),
               ),
-              child: Icon(Icons.lock_outline_rounded, size: 30, color: cs.primary),
+              child: Icon(
+                Icons.lock_outline_rounded,
+                size: 30,
+                color: cs.primary,
+              ),
             ),
             const SizedBox(height: 24),
             Text(
@@ -36,9 +40,7 @@ class EmptyState extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Mount a VeraCrypt container to get started',
-              style: textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
+              style: textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 28),
@@ -47,7 +49,10 @@ class EmptyState extends StatelessWidget {
               icon: const Icon(Icons.folder_open_rounded, size: 18),
               label: const Text('Mount Container'),
               style: FilledButton.styleFrom(
-                minimumSize: const Size(0, 48), // Overrides global full-width setting to keep the layout compact
+                minimumSize: const Size(
+                  0,
+                  48,
+                ), // Overrides global full-width setting to keep the layout compact
                 padding: const EdgeInsets.symmetric(horizontal: 24),
               ),
             ),

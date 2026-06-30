@@ -53,7 +53,7 @@ class FileOperationService extends ChangeNotifier {
   static final instance = FileOperationService._();
 
   static const _maxConcurrentItems = 4;
-  static const _chunkSize          = 256 * 1024; // 256 KB
+  static const _chunkSize = 256 * 1024; // 256 KB
 
   // ── State ─────────────────────────────────────────────────────────────────
 
@@ -63,9 +63,11 @@ class FileOperationService extends ChangeNotifier {
   List<FileOperation> get operations => List.unmodifiable(_operations);
 
   List<FileOperation> get activeOperations => _operations
-      .where((op) =>
-          op.status == FileOperationStatus.pending ||
-          op.status == FileOperationStatus.running)
+      .where(
+        (op) =>
+            op.status == FileOperationStatus.pending ||
+            op.status == FileOperationStatus.running,
+      )
       .toList();
 
   int get activeCount => activeOperations.length;
@@ -85,14 +87,14 @@ class FileOperationService extends ChangeNotifier {
     // FileOperation._internal() is accessible here because this file is
     // declared `part of 'file_operation.dart'`.
     final op = FileOperation._internal(
-      id:                  _nextId++,
-      isCut:               isCut,
-      sourceVolId:         source.volId,
-      sourceDisplayName:   source.displayName,
-      destVolId:           dest.volId,
-      destDisplayName:     dest.displayName,
-      destDirPath:         destDirPath,
-      items:               items,
+      id: _nextId++,
+      isCut: isCut,
+      sourceVolId: source.volId,
+      sourceDisplayName: source.displayName,
+      destVolId: dest.volId,
+      destDisplayName: dest.displayName,
+      destDirPath: destDirPath,
+      items: items,
     );
     _operations.add(op);
     notifyListeners();
@@ -111,7 +113,7 @@ class FileOperationService extends ChangeNotifier {
     int deleted = 0;
     for (int i = 0; i < items.length; i++) {
       final item = items[i];
-      final ok   = await _deleteEntryRecursive(container, item.path, item.isDir);
+      final ok = await _deleteEntryRecursive(container, item.path, item.isDir);
       if (ok) deleted++;
       onProgress?.call(i + 1, items.length);
     }
@@ -120,15 +122,20 @@ class FileOperationService extends ChangeNotifier {
 
   /// Removes completed / failed / cancelled operations from history.
   void clearFinished() {
-    _operations.removeWhere((op) =>
-        op.status != FileOperationStatus.pending &&
-        op.status != FileOperationStatus.running);
+    _operations.removeWhere(
+      (op) =>
+          op.status != FileOperationStatus.pending &&
+          op.status != FileOperationStatus.running,
+    );
     notifyListeners();
   }
 
   // ── Size measurement (public — used by the screen for pre-flight UI) ──────
 
-  Future<int> measureTreeBytes(MountedContainer container, String dirPath) async {
+  Future<int> measureTreeBytes(
+    MountedContainer container,
+    String dirPath,
+  ) async {
     int total = 0;
     final entries =
         await vaultExplorerApi.listDirectory(container, dirPath) ?? [];
@@ -145,7 +152,9 @@ class FileOperationService extends ChangeNotifier {
   }
 
   Future<int> measureItemBytes(
-      MountedContainer container, ClipboardItem item) async {
+    MountedContainer container,
+    ClipboardItem item,
+  ) async {
     if (!item.isDir) {
       return item.sizeBytes > 0
           ? item.sizeBytes
@@ -159,8 +168,8 @@ class FileOperationService extends ChangeNotifier {
   static String makeUniqueName(String fileName, Set<String> existingNames) {
     if (!existingNames.contains(fileName.toLowerCase())) return fileName;
     final dotIdx = fileName.lastIndexOf('.');
-    final stem   = dotIdx != -1 ? fileName.substring(0, dotIdx) : fileName;
-    final ext    = dotIdx != -1 ? fileName.substring(dotIdx) : '';
+    final stem = dotIdx != -1 ? fileName.substring(0, dotIdx) : fileName;
+    final ext = dotIdx != -1 ? fileName.substring(dotIdx) : '';
     for (int i = 1; i < 9999; i++) {
       final candidate = '$stem ($i)$ext';
       if (!existingNames.contains(candidate.toLowerCase())) return candidate;
@@ -193,8 +202,9 @@ class FileOperationService extends ChangeNotifier {
       }
 
       final spaceInfo = await vaultExplorerApi.getSpaceInfo(dest);
-      final freeBytes =
-          (spaceInfo != null && spaceInfo.length > 1) ? spaceInfo[1] : 0;
+      final freeBytes = (spaceInfo != null && spaceInfo.length > 1)
+          ? spaceInfo[1]
+          : 0;
 
       if (requiredBytes > (freeBytes * 0.95).floor()) {
         op._setError(
@@ -214,7 +224,7 @@ class FileOperationService extends ChangeNotifier {
       if (op.cancelRequested) throw const _CancelledException();
 
       final existingNames = <String>{};
-      final existingDirs  = <String>{};
+      final existingDirs = <String>{};
       for (final raw in existingRaw) {
         final e = RawEntry.parse(raw);
         existingNames.add(e.name.toLowerCase());
@@ -222,8 +232,7 @@ class FileOperationService extends ChangeNotifier {
       }
 
       // Pair each item with its resolved destination path.
-      final resolved =
-          <({ClipboardItem item, String destPath, bool skip})>[];
+      final resolved = <({ClipboardItem item, String destPath, bool skip})>[];
 
       for (final item in op.items) {
         final fileName = item.name;
@@ -246,7 +255,8 @@ class FileOperationService extends ChangeNotifier {
 
         if (existingNames.contains(fileName.toLowerCase())) {
           final resolution =
-              conflictPlan[fileName.toLowerCase()] ?? ConflictResolution.keepBoth;
+              conflictPlan[fileName.toLowerCase()] ??
+              ConflictResolution.keepBoth;
 
           switch (resolution) {
             case ConflictResolution.skip:
@@ -255,7 +265,10 @@ class FileOperationService extends ChangeNotifier {
             case ConflictResolution.overwrite:
               if (op.isCut) {
                 await _deleteEntryRecursive(
-                    dest, destPath, existingDirs.contains(fileName.toLowerCase()));
+                  dest,
+                  destPath,
+                  existingDirs.contains(fileName.toLowerCase()),
+                );
               }
             case ConflictResolution.keepBoth:
               final unique = makeUniqueName(fileName, existingNames);
@@ -270,13 +283,13 @@ class FileOperationService extends ChangeNotifier {
       }
 
       // ── Parallel copy ─────────────────────────────────────────────────
-      final semaphore       = _CopySemaphore(_maxConcurrentItems);
+      final semaphore = _CopySemaphore(_maxConcurrentItems);
       final createdDestPaths = <String>[];
 
       await Future.wait(
         resolved.asMap().entries.map((entry) async {
-          final idx  = entry.key;
-          final r    = entry.value;
+          final idx = entry.key;
+          final r = entry.value;
 
           await semaphore.acquire();
           try {
@@ -288,15 +301,25 @@ class FileOperationService extends ChangeNotifier {
             }
 
             op._setActivity(
-                '${op.isCut ? "Moving" : "Copying"} ${r.item.name}…');
+              '${op.isCut ? "Moving" : "Copying"} ${r.item.name}…',
+            );
 
             final ok = await _copyEntry(
-                src, dest, r.item.path, r.destPath, r.item.isDir,
-                createdDestPaths, op);
+              src,
+              dest,
+              r.item.path,
+              r.destPath,
+              r.item.isDir,
+              createdDestPaths,
+              op,
+            );
 
             if (!ok) {
-              op._recordItemResult(idx, FileItemResult.failed,
-                  errorMessage: 'Copy failed');
+              op._recordItemResult(
+                idx,
+                FileItemResult.failed,
+                errorMessage: 'Copy failed',
+              );
             } else if (op.isCut) {
               await _deleteEntryRecursive(src, r.item.path, r.item.isDir);
               op._recordItemResult(idx, FileItemResult.success);
@@ -304,16 +327,25 @@ class FileOperationService extends ChangeNotifier {
               op._recordItemResult(idx, FileItemResult.success);
             }
           } on _DiskFullException {
-            op._recordItemResult(idx, FileItemResult.failed,
-                errorMessage: 'Disk full');
+            op._recordItemResult(
+              idx,
+              FileItemResult.failed,
+              errorMessage: 'Disk full',
+            );
             rethrow;
           } on _CancelledException {
-            op._recordItemResult(idx, FileItemResult.skipped,
-                errorMessage: 'Cancelled');
+            op._recordItemResult(
+              idx,
+              FileItemResult.skipped,
+              errorMessage: 'Cancelled',
+            );
             rethrow;
           } catch (e) {
-            op._recordItemResult(idx, FileItemResult.failed,
-                errorMessage: e.toString());
+            op._recordItemResult(
+              idx,
+              FileItemResult.failed,
+              errorMessage: e.toString(),
+            );
           } finally {
             semaphore.release();
           }
@@ -324,12 +356,15 @@ class FileOperationService extends ChangeNotifier {
       });
 
       // ── Final status ──────────────────────────────────────────────────
-      final diskFull =
-          op.itemStatuses.any((s) => s.errorMessage == 'Disk full');
+      final diskFull = op.itemStatuses.any(
+        (s) => s.errorMessage == 'Disk full',
+      );
 
       if (diskFull) {
         for (final path in createdDestPaths.reversed) {
-          try { await _deleteEntryRecursive(dest, path, false); } catch (_) {}
+          try {
+            await _deleteEntryRecursive(dest, path, false);
+          } catch (_) {}
         }
         op._setError('Disk full — partial files removed');
         op._setStatus(FileOperationStatus.diskFull);
@@ -372,8 +407,7 @@ class FileOperationService extends ChangeNotifier {
       return _copyFile(src, dest, srcPath, destPath, createdDestPaths, op);
     }
 
-    final children =
-        await vaultExplorerApi.listDirectory(src, srcPath) ?? [];
+    final children = await vaultExplorerApi.listDirectory(src, srcPath) ?? [];
     await vaultExplorerApi.createDirectory(dest, destPath);
     createdDestPaths.add(destPath);
 
@@ -381,11 +415,15 @@ class FileOperationService extends ChangeNotifier {
     for (final entry in children) {
       if (entry.startsWith('System:')) continue;
       // Always use RawEntry.parse() — never entry.split('|').first.
-      final e  = RawEntry.parse(entry);
+      final e = RawEntry.parse(entry);
       final ok = await _copyEntry(
-        src, dest,
-        '$srcPath/${e.name}', '$destPath/${e.name}',
-        e.isDir, createdDestPaths, op,
+        src,
+        dest,
+        '$srcPath/${e.name}',
+        '$destPath/${e.name}',
+        e.isDir,
+        createdDestPaths,
+        op,
       );
       if (!ok) allOk = false;
     }
@@ -416,11 +454,19 @@ class FileOperationService extends ChangeNotifier {
       while (offset < size) {
         if (op.cancelRequested) throw const _CancelledException();
         final chunkLen = min(size - offset, _chunkSize);
-        final chunk =
-            await vaultExplorerApi.readFileChunk(src, srcPath, offset, chunkLen);
+        final chunk = await vaultExplorerApi.readFileChunk(
+          src,
+          srcPath,
+          offset,
+          chunkLen,
+        );
         if (chunk == null || chunk.isEmpty) return false;
-        final ok =
-            await vaultExplorerApi.writeFileChunk(dest, destPath, offset, chunk);
+        final ok = await vaultExplorerApi.writeFileChunk(
+          dest,
+          destPath,
+          offset,
+          chunk,
+        );
         if (!ok) throw const _DiskFullException();
         offset += chunk.length;
       }
@@ -435,7 +481,10 @@ class FileOperationService extends ChangeNotifier {
   // ── Recursive delete ──────────────────────────────────────────────────────
 
   Future<bool> _deleteEntryRecursive(
-      MountedContainer container, String path, bool isDir) async {
+    MountedContainer container,
+    String path,
+    bool isDir,
+  ) async {
     if (!isDir) return vaultExplorerApi.deleteFile(container, path);
 
     final children =

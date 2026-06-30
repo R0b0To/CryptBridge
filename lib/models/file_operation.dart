@@ -147,11 +147,11 @@ class FileOperation extends ChangeNotifier {
   }
 
   bool get isCrossContainer => sourceVolId != destVolId;
-  String get verb     => isCut ? 'Move' : 'Copy';
+  String get verb => isCut ? 'Move' : 'Copy';
   String get verbPast => isCut ? 'Moved' : 'Copied';
 
   String get shortSummary {
-    final n     = items.length;
+    final n = items.length;
     final label = n == 1 ? items.first.name : '$n items';
     return '${verb}ing $label';
   }
@@ -182,8 +182,8 @@ class FileOperation extends ChangeNotifier {
     required this.destDirPath,
     required this.items,
   }) : _itemStatuses = items
-            .map((i) => FileItemStatus(item: i))
-            .toList(growable: false);
+           .map((i) => FileItemStatus(item: i))
+           .toList(growable: false);
 
   // ── Mutation API — library-private ────────────────────────────────────────
 
@@ -202,11 +202,16 @@ class FileOperation extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _recordItemResult(int index, FileItemResult result,
-      {String? errorMessage}) {
+  void _recordItemResult(
+    int index,
+    FileItemResult result, {
+    String? errorMessage,
+  }) {
     assert(index >= 0 && index < _itemStatuses.length);
-    _itemStatuses[index] =
-        _itemStatuses[index].copyWith(result: result, errorMessage: errorMessage);
+    _itemStatuses[index] = _itemStatuses[index].copyWith(
+      result: result,
+      errorMessage: errorMessage,
+    );
     switch (result) {
       case FileItemResult.success:
         _doneCount++;

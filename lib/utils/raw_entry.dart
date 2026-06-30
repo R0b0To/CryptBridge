@@ -15,7 +15,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class RawEntry {
   final String name;
-  final bool   isDir;
+  final bool isDir;
 
   /// Byte size of the file.  Always 0 for directories; call [getFolderSize]
   /// for the real recursive total.
@@ -36,12 +36,12 @@ class RawEntry {
     final isDir = raw.startsWith('[DIR] ');
     // Strip the six-character prefix so both branches share the same
     // "name|size|ts" splitting logic.
-    final body  = isDir ? raw.substring(6) : raw;
+    final body = isDir ? raw.substring(6) : raw;
     final parts = body.split('|');
     return RawEntry(
-      name:         parts[0],
-      isDir:        isDir,
-      sizeBytes:    parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
+      name: parts[0],
+      isDir: isDir,
+      sizeBytes: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
       modifiedSecs: parts.length > 2 ? int.tryParse(parts[2]) ?? 0 : 0,
     );
   }
@@ -60,6 +60,7 @@ class RawEntry {
       : null;
 
   @override
-  String toString() => 'RawEntry(${isDir ? "DIR" : "FILE"} $name, '
+  String toString() =>
+      'RawEntry(${isDir ? "DIR" : "FILE"} $name, '
       '${sizeBytes}B, ts=$modifiedSecs)';
 }

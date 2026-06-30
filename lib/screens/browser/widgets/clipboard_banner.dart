@@ -51,12 +51,13 @@ class ClipboardBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     final verb = isCutOperation ? 'Moving' : 'Copying';
     final fromSuffix = sourceLabel != null ? ' from "$sourceLabel"' : '';
-    final titleText  = '$verb $itemCount item${itemCount == 1 ? '' : 's'}$fromSuffix';
+    final titleText =
+        '$verb $itemCount item${itemCount == 1 ? '' : 's'}$fromSuffix';
 
     return Material(
       color: cs.primaryContainer,
@@ -87,7 +88,10 @@ class ClipboardBanner extends StatelessWidget {
                 onPressed: onPaste,
                 style: TextButton.styleFrom(
                   foregroundColor: cs.onPrimaryContainer,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   textStyle: textTheme.labelLarge?.copyWith(
@@ -97,8 +101,11 @@ class ClipboardBanner extends StatelessWidget {
                 child: const Text('Paste here'),
               ),
               IconButton(
-                icon: Icon(Icons.close_rounded,
-                    size: 18, color: cs.onPrimaryContainer),
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: cs.onPrimaryContainer,
+                ),
                 tooltip: 'Cancel',
                 onPressed: onCancel,
                 visualDensity: VisualDensity.compact,

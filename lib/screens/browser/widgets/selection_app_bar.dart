@@ -44,9 +44,7 @@ class SelectionAppBar extends StatelessWidget implements PreferredSizeWidget {
       backgroundColor: cs.surfaceContainer, // Matches contextual CAB styling
       foregroundColor: cs.onSurface,
       elevation: 0,
-      shape: Border(
-        bottom: BorderSide(color: cs.outlineVariant),
-      ),
+      shape: Border(bottom: BorderSide(color: cs.outlineVariant)),
       leading: IconButton(
         icon: const Icon(Icons.close_rounded),
         tooltip: 'Clear selection',
@@ -62,15 +60,21 @@ class SelectionAppBar extends StatelessWidget implements PreferredSizeWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: cs.primaryContainer,
-                  borderRadius: BorderRadius.circular(100), // Perfect pill shape
+                  borderRadius: BorderRadius.circular(
+                    100,
+                  ), // Perfect pill shape
                 ),
                 child: Text(
                   '$selectedCount',
                   style: textTheme.labelLarge?.copyWith(
-                    color: cs.onPrimaryContainer, // Clean high-contrast text on deep container blue
+                    color: cs
+                        .onPrimaryContainer, // Clean high-contrast text on deep container blue
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -87,7 +91,11 @@ class SelectionAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
               const SizedBox(width: 2),
-              Icon(Icons.arrow_drop_down_rounded, color: cs.onSurface, size: 22),
+              Icon(
+                Icons.arrow_drop_down_rounded,
+                color: cs.onSurface,
+                size: 22,
+              ),
             ],
           ),
         ),
@@ -140,8 +148,11 @@ class SelectionAppBar extends StatelessWidget implements PreferredSizeWidget {
               value: 'export',
               child: Row(
                 children: [
-                  Icon(Icons.drive_folder_upload_rounded,
-                      color: cs.onSurfaceVariant, size: 18),
+                  Icon(
+                    Icons.drive_folder_upload_rounded,
+                    color: cs.onSurfaceVariant,
+                    size: 18,
+                  ),
                   const SizedBox(width: 12),
                   const Text('Export to device'),
                 ],
@@ -152,8 +163,11 @@ class SelectionAppBar extends StatelessWidget implements PreferredSizeWidget {
                 value: 'open_with_app',
                 child: Row(
                   children: [
-                    Icon(Icons.open_in_new_rounded,
-                        color: cs.onSurfaceVariant, size: 18),
+                    Icon(
+                      Icons.open_in_new_rounded,
+                      color: cs.onSurfaceVariant,
+                      size: 18,
+                    ),
                     const SizedBox(width: 12),
                     const Text('Open with App'),
                   ],

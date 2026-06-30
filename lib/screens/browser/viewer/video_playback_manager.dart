@@ -5,8 +5,8 @@ import 'media_viewer_constants.dart';
 class VideoPlaybackManager {
   final Map<int, VideoPlayerController> _controllers = {};
   final Map<int, bool> _subtitlesAvailableMap = {};
-  
-  final ValueNotifier<VideoPlayerController?> activeControllerNotifier = 
+
+  final ValueNotifier<VideoPlayerController?> activeControllerNotifier =
       ValueNotifier<VideoPlayerController?>(null);
 
   VideoPlayerController? get activeController => activeControllerNotifier.value;
@@ -22,7 +22,7 @@ class VideoPlaybackManager {
   }) {
     _evictDistantControllers(index);
     _controllers[index] = controller;
-    
+
     if (currentFocus) {
       activeControllerNotifier.value = controller;
     }
@@ -56,10 +56,11 @@ class VideoPlaybackManager {
   }
 
   void _evictDistantControllers(int currentIndex) {
-    while (_controllers.length >= MediaViewerConstants.maxLiveVideoControllers) {
+    while (_controllers.length >=
+        MediaViewerConstants.maxLiveVideoControllers) {
       int furthestIndex = -1;
       int maxDistance = -1;
-      
+
       for (final pageIndex in _controllers.keys) {
         final dist = (pageIndex - currentIndex).abs();
         if (dist > maxDistance) {
@@ -67,11 +68,11 @@ class VideoPlaybackManager {
           furthestIndex = pageIndex;
         }
       }
-      
+
       if (furthestIndex == -1) break;
       final evicted = _controllers.remove(furthestIndex);
       _subtitlesAvailableMap.remove(furthestIndex);
-      
+
       if (evicted != null) {
         Future.microtask(() {
           try {

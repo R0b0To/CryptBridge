@@ -81,11 +81,11 @@ class _OperationProgressBarState extends State<OperationProgressBar>
       child: ListenableBuilder(
         listenable: FileOperationService.instance,
         builder: (context, _) {
-          final svc    = FileOperationService.instance;
-          final ops    = svc.operations;
+          final svc = FileOperationService.instance;
+          final ops = svc.operations;
           if (ops.isEmpty) return const SizedBox.shrink();
 
-          final active  = svc.activeOperations;
+          final active = svc.activeOperations;
           final hasActive = active.isNotEmpty;
 
           // Pick the representative operation to display inline.
@@ -117,40 +117,39 @@ class _ProgressBarSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return ListenableBuilder(
       listenable: primary,
       builder: (context, _) {
-        final isError = primary.status == FileOperationStatus.failed ||
+        final isError =
+            primary.status == FileOperationStatus.failed ||
             primary.status == FileOperationStatus.diskFull ||
             primary.status == FileOperationStatus.completedWithErrors;
 
-        final barColor    = isError ? cs.error : cs.primary;
+        final barColor = isError ? cs.error : cs.primary;
         final surfaceColor = isError
             ? cs.errorContainer.withValues(alpha: 0.6)
             : cs.surfaceContainerHigh;
         final textColor = isError ? cs.onErrorContainer : cs.onSurface;
-        final subColor  = isError
+        final subColor = isError
             ? cs.onErrorContainer.withValues(alpha: 0.7)
             : cs.onSurfaceVariant;
 
         final fraction = primary.progressFraction;
-        final multiOp  = totalOps > 1;
+        final multiOp = totalOps > 1;
 
         // Label: multi-op gets a count badge; single op shows activity text.
         final label = multiOp
             ? '$totalOps transfers'
             : (hasActive && primary.currentActivity.isNotEmpty
-                ? primary.currentActivity
-                : primary.shortSummary);
+                  ? primary.currentActivity
+                  : primary.shortSummary);
 
         final sublabel = multiOp
             ? '${primary.shortSummary} · tap to view all'
-            : (hasActive
-                ? _progressText(primary)
-                : primary.completionSummary);
+            : (hasActive ? _progressText(primary) : primary.completionSummary);
 
         return GestureDetector(
           onTap: () => FileOperationsSheet.show(context),
@@ -167,8 +166,7 @@ class _ProgressBarSurface extends StatelessWidget {
                   child: hasActive
                       ? LinearProgressIndicator(
                           value: fraction,
-                          backgroundColor:
-                              cs.surfaceContainerHighest,
+                          backgroundColor: cs.surfaceContainerHighest,
                           color: barColor,
                           minHeight: 2,
                         )
@@ -183,12 +181,17 @@ class _ProgressBarSurface extends StatelessWidget {
                 // ── Content row ────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 9),
+                    horizontal: 16,
+                    vertical: 9,
+                  ),
                   child: Row(
                     children: [
                       // Status indicator
                       _InlineStatusIcon(
-                          op: primary, cs: cs, hasActive: hasActive),
+                        op: primary,
+                        cs: cs,
+                        hasActive: hasActive,
+                      ),
                       const SizedBox(width: 12),
 
                       // Text
@@ -210,8 +213,9 @@ class _ProgressBarSurface extends StatelessWidget {
                               const SizedBox(height: 1),
                               Text(
                                 sublabel,
-                                style: textTheme.bodySmall
-                                    ?.copyWith(color: subColor),
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: subColor,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -221,8 +225,11 @@ class _ProgressBarSurface extends StatelessWidget {
                       ),
 
                       // Chevron
-                      Icon(Icons.chevron_right_rounded,
-                          size: 18, color: subColor),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 18,
+                        color: subColor,
+                      ),
                     ],
                   ),
                 ),
@@ -235,7 +242,7 @@ class _ProgressBarSurface extends StatelessWidget {
   }
 
   String _progressText(FileOperation op) {
-    final done  = op.doneCount + op.skipCount + op.failCount;
+    final done = op.doneCount + op.skipCount + op.failCount;
     final total = op.totalCount;
     if (total == 0) return '';
     final pct = ((done / total) * 100).round();
@@ -249,8 +256,11 @@ class _InlineStatusIcon extends StatelessWidget {
   final FileOperation op;
   final ColorScheme cs;
   final bool hasActive;
-  const _InlineStatusIcon(
-      {required this.op, required this.cs, required this.hasActive});
+  const _InlineStatusIcon({
+    required this.op,
+    required this.cs,
+    required this.hasActive,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -274,11 +284,17 @@ class _InlineStatusIcon extends StatelessWidget {
       case FileOperationStatus.diskFull:
         return Icon(Icons.error_outline_rounded, size: 16, color: cs.error);
       case FileOperationStatus.cancelled:
-        return Icon(Icons.cancel_outlined,
-            size: 16, color: cs.onSurfaceVariant);
+        return Icon(
+          Icons.cancel_outlined,
+          size: 16,
+          color: cs.onSurfaceVariant,
+        );
       default:
-        return Icon(Icons.swap_horiz_rounded,
-            size: 16, color: cs.onSurfaceVariant);
+        return Icon(
+          Icons.swap_horiz_rounded,
+          size: 16,
+          color: cs.onSurfaceVariant,
+        );
     }
   }
 }

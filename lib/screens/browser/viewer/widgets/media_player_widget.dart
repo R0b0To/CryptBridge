@@ -30,12 +30,13 @@ class VideoPlaybackProgress {
     final currentDragging = isDragging ?? this.isDragging;
     final currentDuration = duration ?? this.duration;
     final currentPosition = position ?? this.position;
-    
+
     double computedSlider = 0.0;
     if (currentDragging) {
       computedSlider = sliderValue ?? this.sliderValue;
     } else if (currentDuration.inMilliseconds > 0) {
-      computedSlider = currentPosition.inMilliseconds / currentDuration.inMilliseconds;
+      computedSlider =
+          currentPosition.inMilliseconds / currentDuration.inMilliseconds;
     }
 
     return VideoPlaybackProgress(
@@ -96,7 +97,8 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
   bool _showRightIndicator = false;
   bool _isSpeedHeld = false;
 
-  final TransformationController _videoTransformationController = TransformationController();
+  final TransformationController _videoTransformationController =
+      TransformationController();
   double _videoScale = 1.0;
   TapDownDetails? _videoDoubleTapDetails;
 
@@ -107,7 +109,9 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
   }
 
   Future<void> _initPlayer() async {
-    _controller = VideoPlayerController.contentUri(Uri.parse(widget.contentUriString));
+    _controller = VideoPlayerController.contentUri(
+      Uri.parse(widget.contentUriString),
+    );
 
     _controller.addListener(_onControllerTick);
 
@@ -136,7 +140,7 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
 
   void _onControllerTick() {
     if (!mounted || !_initialized) return;
-    
+
     // Updates the progressNotifier instead of triggering a full widget setState() rebuild
     widget.progressNotifier.value = widget.progressNotifier.value.copyWith(
       position: _controller.value.position,
@@ -148,17 +152,27 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
     final dotIndex = videoPath.lastIndexOf('.');
     if (dotIndex == -1) return null;
     final basePath = videoPath.substring(0, dotIndex);
-    
+
     for (final ext in ['srt', 'vtt']) {
       final subPath = '$basePath.$ext';
       try {
-        final size = await vaultExplorerApi.getFileSize(widget.container, subPath);
+        final size = await vaultExplorerApi.getFileSize(
+          widget.container,
+          subPath,
+        );
         if (size > 0) {
-          final data = await vaultExplorerApi.readFileChunk(widget.container, subPath, 0, size);
+          final data = await vaultExplorerApi.readFileChunk(
+            widget.container,
+            subPath,
+            0,
+            size,
+          );
           if (data != null && data.isNotEmpty) {
             final text = utf8.decode(data, allowMalformed: true);
             widget.onSubtitlesAvailableChanged(true);
-            return ext == 'srt' ? SubRipCaptionFile(text) : WebVTTCaptionFile(text);
+            return ext == 'srt'
+                ? SubRipCaptionFile(text)
+                : WebVTTCaptionFile(text);
           }
         }
       } catch (_) {}
@@ -204,7 +218,8 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
             ..translate(x, y)
             ..scale(_videoScale);
         } else {
-          _videoTransformationController.value = Matrix4.identity()..scale(_videoScale);
+          _videoTransformationController.value = Matrix4.identity()
+            ..scale(_videoScale);
         }
         widget.onZoomChanged(false);
       } else {
@@ -227,7 +242,7 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
         ? Duration.zero
         : (targetPos > duration ? duration : targetPos);
     _controller.seekTo(clampedPos);
-    
+
     setState(() {
       if (backwards) {
         _showLeftIndicator = true;
@@ -235,7 +250,7 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
         _showRightIndicator = true;
       }
     });
-    
+
     Timer(MediaViewerConstants.doubleTapIndicatorDelay, () {
       if (mounted) {
         setState(() {
@@ -282,7 +297,9 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
     final isRotated = widget.rotationQuarterTurns % 2 != 0;
     final double computedAspectRatio = widget.isAudio
         ? 0.8
-        : (isRotated ? 1.0 / _controller.value.aspectRatio : _controller.value.aspectRatio);
+        : (isRotated
+              ? 1.0 / _controller.value.aspectRatio
+              : _controller.value.aspectRatio);
 
     Widget corePlayerWidget = Center(
       child: AspectRatio(
@@ -310,7 +327,13 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
                       textStyle: const TextStyle(
                         fontSize: 15,
                         color: Colors.white,
-                        shadows: [Shadow(blurRadius: 4, color: Colors.black, offset: Offset(1, 1))],
+                        shadows: [
+                          Shadow(
+                            blurRadius: 4,
+                            color: Colors.black,
+                            offset: Offset(1, 1),
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -386,23 +409,43 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
         alignment: Alignment.center,
         children: [
           corePlayerWidget,
-          if (_showLeftIndicator) _buildIndicator(Icons.fast_rewind_rounded, '-${widget.skipSeconds}s', true),
-          if (_showRightIndicator) _buildIndicator(Icons.fast_forward_rounded, '+${widget.skipSeconds}s', false),
+          if (_showLeftIndicator)
+            _buildIndicator(
+              Icons.fast_rewind_rounded,
+              '-${widget.skipSeconds}s',
+              true,
+            ),
+          if (_showRightIndicator)
+            _buildIndicator(
+              Icons.fast_forward_rounded,
+              '+${widget.skipSeconds}s',
+              false,
+            ),
           if (_isSpeedHeld)
             Positioned(
               top: 100,
               child: IgnorePointer(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.65),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: cs.primary.withValues(alpha: 0.6), width: 1),
+                    border: Border.all(
+                      color: cs.primary.withValues(alpha: 0.6),
+                      width: 1,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.fast_forward_rounded, color: cs.primary, size: 16),
+                      Icon(
+                        Icons.fast_forward_rounded,
+                        color: cs.primary,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         '2× speed',
@@ -441,7 +484,11 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
               const SizedBox(height: 4),
               Text(
                 text,
-                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -462,16 +509,25 @@ class _MediaPlayerWidgetState extends State<MediaPlayerWidget> {
           decoration: BoxDecoration(
             color: const Color(0xFF161B22),
             shape: BoxShape.circle,
-            border: Border.all(color: cs.primary.withValues(alpha: 0.25), width: 2),
+            border: Border.all(
+              color: cs.primary.withValues(alpha: 0.25),
+              width: 2,
+            ),
           ),
-          child: Center(child: Icon(Icons.music_note_rounded, size: 56, color: cs.primary)),
+          child: Center(
+            child: Icon(Icons.music_note_rounded, size: 56, color: cs.primary),
+          ),
         ),
         const SizedBox(height: 24),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32.0),
           child: Text(
             fileTitle,
-            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -492,14 +548,18 @@ class _AudioVisualizer extends StatefulWidget {
   State<_AudioVisualizer> createState() => _AudioVisualizerState();
 }
 
-class _AudioVisualizerState extends State<_AudioVisualizer> with SingleTickerProviderStateMixin {
+class _AudioVisualizerState extends State<_AudioVisualizer>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   final List<double> _heights = [0.2, 0.5, 0.8, 0.4, 0.9, 0.3, 0.7, 0.5, 0.2];
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
     if (widget.isPlaying) _controller.repeat(reverse: true);
   }
 
@@ -535,14 +595,17 @@ class _AudioVisualizerState extends State<_AudioVisualizer> with SingleTickerPro
             double factor = (index % 3 == 0)
                 ? (animValue * 0.8 + 0.2)
                 : (index % 3 == 1)
-                    ? ((1.0 - animValue) * 0.7 + 0.3)
-                    : (((animValue + 0.5) % 1.0) * 0.6 + 0.4);
+                ? ((1.0 - animValue) * 0.7 + 0.3)
+                : (((animValue + 0.5) % 1.0) * 0.6 + 0.4);
             if (!widget.isPlaying) factor = 0.15;
             return Container(
               margin: const EdgeInsets.symmetric(horizontal: 3),
               width: 5,
               height: 40 * factor * _heights[index],
-              decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(3)),
+              decoration: BoxDecoration(
+                color: cs.primary,
+                borderRadius: BorderRadius.circular(3),
+              ),
             );
           }),
         ),

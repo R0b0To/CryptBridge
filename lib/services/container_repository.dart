@@ -20,34 +20,35 @@ enum ContainerUnlockMethod {
   pattern;
 
   String get label => switch (this) {
-    ContainerUnlockMethod.password         => 'Manual Password',
+    ContainerUnlockMethod.password => 'Manual Password',
     ContainerUnlockMethod.rememberPassword => 'Remember Password',
-    ContainerUnlockMethod.biometrics       => 'Biometric Unlock',
-    ContainerUnlockMethod.pattern          => 'Pattern Unlock',
+    ContainerUnlockMethod.biometrics => 'Biometric Unlock',
+    ContainerUnlockMethod.pattern => 'Pattern Unlock',
   };
 
   String get subtitle => switch (this) {
-    ContainerUnlockMethod.password         => 'Type the password every time',
-    ContainerUnlockMethod.rememberPassword => 'Stored securely in Android Keystore',
-    ContainerUnlockMethod.biometrics       => 'Use fingerprint or face to unlock',
-    ContainerUnlockMethod.pattern          => 'Draw a pattern to unlock',
+    ContainerUnlockMethod.password => 'Type the password every time',
+    ContainerUnlockMethod.rememberPassword =>
+      'Stored securely in Android Keystore',
+    ContainerUnlockMethod.biometrics => 'Use fingerprint or face to unlock',
+    ContainerUnlockMethod.pattern => 'Draw a pattern to unlock',
   };
 
   IconData get icon => switch (this) {
-    ContainerUnlockMethod.password         => Icons.key,
+    ContainerUnlockMethod.password => Icons.key,
     ContainerUnlockMethod.rememberPassword => Icons.lock_open,
-    ContainerUnlockMethod.biometrics       => Icons.fingerprint,
-    ContainerUnlockMethod.pattern          => Icons.pattern,
+    ContainerUnlockMethod.biometrics => Icons.fingerprint,
+    ContainerUnlockMethod.pattern => Icons.pattern,
   };
 
   String toJson() => name;
 
   static ContainerUnlockMethod fromJson(String? value) => switch (value) {
-    'password'         => ContainerUnlockMethod.password,
+    'password' => ContainerUnlockMethod.password,
     'rememberPassword' => ContainerUnlockMethod.rememberPassword,
-    'biometrics'       => ContainerUnlockMethod.biometrics,
-    'pattern'          => ContainerUnlockMethod.pattern,
-    _                  => ContainerUnlockMethod.password,
+    'biometrics' => ContainerUnlockMethod.biometrics,
+    'pattern' => ContainerUnlockMethod.pattern,
+    _ => ContainerUnlockMethod.password,
   };
 }
 
@@ -223,7 +224,7 @@ class ContainerRecord {
     this.unlockMethod = ContainerUnlockMethod.password,
     this.autoCloseMins = 0,
     this.documentProvider = false,
-    this.thumbnailCacheMode,  // null = inherit app default
+    this.thumbnailCacheMode, // null = inherit app default
     this.pendingPassword,
     this.pendingPatternHash,
   });
@@ -255,16 +256,16 @@ class ContainerRecord {
   }
 
   Map<String, dynamic> toJson() => {
-        'uri': uri,
-        'label': label,
-        'rememberPassword': rememberPassword,
-        'unlockMethod': unlockMethod.toJson(),
-        'autoCloseMins': autoCloseMins,
-        'documentProvider': documentProvider,
-        if (thumbnailCacheMode != null)
-          'thumbnailCacheMode': thumbnailCacheMode!.toJson(),
-        // pendingPassword and pendingPatternHash are intentionally NOT serialised.
-      };
+    'uri': uri,
+    'label': label,
+    'rememberPassword': rememberPassword,
+    'unlockMethod': unlockMethod.toJson(),
+    'autoCloseMins': autoCloseMins,
+    'documentProvider': documentProvider,
+    if (thumbnailCacheMode != null)
+      'thumbnailCacheMode': thumbnailCacheMode!.toJson(),
+    // pendingPassword and pendingPatternHash are intentionally NOT serialised.
+  };
 
   factory ContainerRecord.fromJson(Map<String, dynamic> j) {
     // ── Backward-compatible migration ─────────────────────────────────────
@@ -285,13 +286,13 @@ class ContainerRecord {
       rememberPassword: method != ContainerUnlockMethod.password,
       unlockMethod: method,
       autoCloseMins: j['autoCloseMins'] as int? ?? 0,
-      documentProvider: j['documentProvider'] as bool? ??
-          j['mountAsDocumentProvider'] as bool? ?? false,
-      thumbnailCacheMode:
-          j.containsKey('thumbnailCacheMode')
-              ? ThumbnailCacheMode.fromJson(
-                  j['thumbnailCacheMode'] as String?)
-              : null, // null = inherit app default
+      documentProvider:
+          j['documentProvider'] as bool? ??
+          j['mountAsDocumentProvider'] as bool? ??
+          false,
+      thumbnailCacheMode: j.containsKey('thumbnailCacheMode')
+          ? ThumbnailCacheMode.fromJson(j['thumbnailCacheMode'] as String?)
+          : null, // null = inherit app default
     );
   }
 }

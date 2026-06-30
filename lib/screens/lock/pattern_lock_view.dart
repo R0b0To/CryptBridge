@@ -198,7 +198,8 @@ class _PatternPainter extends CustomPainter {
         ..strokeWidth = 4
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
-      final path = Path()..moveTo(centers[selected[0]].dx, centers[selected[0]].dy);
+      final path = Path()
+        ..moveTo(centers[selected[0]].dx, centers[selected[0]].dy);
       for (int i = 1; i < selected.length; i++) {
         path.lineTo(centers[selected[i]].dx, centers[selected[i]].dy);
       }
@@ -259,4 +260,3 @@ String hashPattern(List<int> pattern) {
   final digest = SHA256Digest().process(bytes);
   return digest.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 }
-

@@ -20,13 +20,13 @@ class _LockGateScreenState extends State<LockGateScreen> {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
   static const _kFailedAttempts = 'lock_gate_failed_attempts_v1';
-  static const _kLockedUntilMs  = 'lock_gate_locked_until_ms_v1';
+  static const _kLockedUntilMs = 'lock_gate_locked_until_ms_v1';
 
   AppSettings? _settings;
   bool _loading = true;
 
   final _pwCtrl = TextEditingController();
-  bool _obscure  = true;
+  bool _obscure = true;
   String? _error;
   bool _checking = false;
 
@@ -60,7 +60,7 @@ class _LockGateScreenState extends State<LockGateScreen> {
 
     setState(() {
       _settings = s;
-      _loading  = false;
+      _loading = false;
     });
 
     if (s.masterPasswordIsFingerprint) {
@@ -72,7 +72,7 @@ class _LockGateScreenState extends State<LockGateScreen> {
   Future<void> _loadPersistedLockoutState() async {
     try {
       final storedAttempts = await _secure.read(key: _kFailedAttempts);
-      final storedUntilMs  = await _secure.read(key: _kLockedUntilMs);
+      final storedUntilMs = await _secure.read(key: _kLockedUntilMs);
 
       _failedAttempts = int.tryParse(storedAttempts ?? '') ?? 0;
 
@@ -94,7 +94,7 @@ class _LockGateScreenState extends State<LockGateScreen> {
 
   Future<void> _tryBiometric() async {
     try {
-      final canCheck    = await _localAuth.canCheckBiometrics;
+      final canCheck = await _localAuth.canCheckBiometrics;
       final isSupported = await _localAuth.isDeviceSupported();
       if (!canCheck || !isSupported) {
         if (mounted) {
@@ -105,7 +105,9 @@ class _LockGateScreenState extends State<LockGateScreen> {
       final ok = await _localAuth.authenticate(
         localizedReason: 'Unlock VaultExplorer',
         options: const AuthenticationOptions(
-            biometricOnly: false, stickyAuth: true),
+          biometricOnly: false,
+          stickyAuth: true,
+        ),
       );
       if (ok && mounted) _goToDashboard();
     } on PlatformException catch (e) {
@@ -140,19 +142,22 @@ class _LockGateScreenState extends State<LockGateScreen> {
     _failedAttempts++;
 
     if (_failedAttempts >= 5) {
-      final excess  = _failedAttempts - 4;
+      final excess = _failedAttempts - 4;
       final seconds = (30 * excess).clamp(30, 300);
-      _lockedUntil  = DateTime.now().add(Duration(seconds: seconds));
+      _lockedUntil = DateTime.now().add(Duration(seconds: seconds));
     }
 
     // Persist atomically (best-effort — don't crash the UI on storage failure)
     try {
       await _secure.write(
-          key: _kFailedAttempts, value: _failedAttempts.toString());
+        key: _kFailedAttempts,
+        value: _failedAttempts.toString(),
+      );
       if (_lockedUntil != null) {
         await _secure.write(
-            key: _kLockedUntilMs,
-            value: _lockedUntil!.millisecondsSinceEpoch.toString());
+          key: _kLockedUntilMs,
+          value: _lockedUntil!.millisecondsSinceEpoch.toString(),
+        );
       }
     } catch (_) {}
   }
@@ -160,7 +165,7 @@ class _LockGateScreenState extends State<LockGateScreen> {
   /// Clears the persisted lockout state on successful authentication.
   Future<void> _clearLockoutState() async {
     _failedAttempts = 0;
-    _lockedUntil    = null;
+    _lockedUntil = null;
     try {
       await _secure.delete(key: _kFailedAttempts);
       await _secure.delete(key: _kLockedUntilMs);
@@ -175,7 +180,8 @@ class _LockGateScreenState extends State<LockGateScreen> {
     final lockout = _currentLockout();
     if (lockout != null) {
       setState(() {
-        _error = 'Too many failed attempts. '
+        _error =
+            'Too many failed attempts. '
             'Try again in ${lockout.inSeconds} second(s).';
       });
       return;
@@ -186,7 +192,10 @@ class _LockGateScreenState extends State<LockGateScreen> {
       setState(() => _error = 'Enter your master password');
       return;
     }
-    setState(() { _checking = true; _error = null; });
+    setState(() {
+      _checking = true;
+      _error = null;
+    });
 
     // Small delay so the loading indicator renders before PBKDF2 blocking work.
     await Future<void>.delayed(const Duration(milliseconds: 80));
@@ -218,18 +227,24 @@ class _LockGateScreenState extends State<LockGateScreen> {
         _checking = false;
         _error = newLockout != null
             ? 'Incorrect password. Locked for ${newLockout.inSeconds}s '
-              'due to $_failedAttempts failed attempts.'
+                  'due to $_failedAttempts failed attempts.'
             : 'Incorrect password ($_failedAttempts failed attempt'
-              '${_failedAttempts == 1 ? '' : 's'}).';
+                  '${_failedAttempts == 1 ? '' : 's'}).';
       });
       _pwCtrl.clear();
     }
   }
 
   void _upgradeMasterPasswordHashInBackground(AppSettings s, String pw) {
-    PasswordHasher.deriveHash(pw).then((result) async {
-      await AppSettingsService.saveMasterPassword(s, result.hash, result.salt);
-    }).catchError((_) {});
+    PasswordHasher.deriveHash(pw)
+        .then((result) async {
+          await AppSettingsService.saveMasterPassword(
+            s,
+            result.hash,
+            result.salt,
+          );
+        })
+        .catchError((_) {});
   }
 
   void _goToDashboard() {
@@ -240,7 +255,7 @@ class _LockGateScreenState extends State<LockGateScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     if (_loading) {
@@ -261,87 +276,99 @@ class _LockGateScreenState extends State<LockGateScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                Container(
-                  width: 72, height: 72,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: cs.primaryContainer,
-                    border: Border.all(color: cs.outlineVariant),
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: cs.primaryContainer,
+                      border: Border.all(color: cs.outlineVariant),
+                    ),
+                    child: Icon(
+                      Icons.lock_outline_rounded,
+                      size: 32,
+                      color: cs.primary,
+                    ),
                   ),
-                  child: Icon(Icons.lock_outline_rounded,
-                      size: 32, color: cs.primary),
-                ),
-                const SizedBox(height: 28),
-                Text(
-                  'VaultExplorer',
-                  style: textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold, letterSpacing: -0.2),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Enter your master password to continue',
-                  style: textTheme.bodyMedium
-                      ?.copyWith(color: cs.onSurfaceVariant),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 36),
-                TextField(
-                  controller: _pwCtrl,
-                  obscureText: _obscure,
-                  enabled: !isLockedOut && !_checking,
-                  autofocus: !s.masterPasswordIsFingerprint,
-                  autofillHints: const [AutofillHints.password],
-                  onSubmitted: (_) => _checkPassword(),
-                  decoration: InputDecoration(
-                    labelText: 'Master Password',
-                    prefixIcon: const Icon(Icons.key_rounded, size: 18),
-                    suffixIcon: IconButton(
-                      icon: Icon(
+                  const SizedBox(height: 28),
+                  Text(
+                    'VaultExplorer',
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Enter your master password to continue',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 36),
+                  TextField(
+                    controller: _pwCtrl,
+                    obscureText: _obscure,
+                    enabled: !isLockedOut && !_checking,
+                    autofocus: !s.masterPasswordIsFingerprint,
+                    autofillHints: const [AutofillHints.password],
+                    onSubmitted: (_) => _checkPassword(),
+                    decoration: InputDecoration(
+                      labelText: 'Master Password',
+                      prefixIcon: const Icon(Icons.key_rounded, size: 18),
+                      suffixIcon: IconButton(
+                        icon: Icon(
                           _obscure
                               ? Icons.visibility_outlined
                               : Icons.visibility_off_outlined,
-                          size: 18),
-                      onPressed: () =>
-                          setState(() => _obscure = !_obscure),
+                          size: 18,
+                        ),
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                      ),
                     ),
                   ),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!,
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _error!,
                       style: textTheme.bodySmall?.copyWith(color: cs.error),
-                      textAlign: TextAlign.center),
-                ],
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: (_checking || isLockedOut) ? null : _checkPassword,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                  child: _checking
-                      ? SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation(cs.onPrimary),
-                          ),
-                        )
-                      : const Text('Unlock'),
-                ),
-                if (s.masterPasswordIsFingerprint) ...[
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: isLockedOut ? null : _tryBiometric,
-                    icon: const Icon(Icons.fingerprint_rounded, size: 20),
-                    label: const Text('Use Biometric'),
-                    style: OutlinedButton.styleFrom(
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: (_checking || isLockedOut)
+                        ? null
+                        : _checkPassword,
+                    style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 48),
                     ),
+                    child: _checking
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation(cs.onPrimary),
+                            ),
+                          )
+                        : const Text('Unlock'),
                   ),
+                  if (s.masterPasswordIsFingerprint) ...[
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: isLockedOut ? null : _tryBiometric,
+                      icon: const Icon(Icons.fingerprint_rounded, size: 20),
+                      label: const Text('Use Biometric'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
           ),
         ),
       ),

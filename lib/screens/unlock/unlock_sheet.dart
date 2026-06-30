@@ -54,9 +54,9 @@ class _UnlockSheetState extends State<UnlockSheet> {
     super.initState();
     _passwordCtrl = TextEditingController(text: widget.prefillPassword ?? '');
     if (widget.initialUri != null) {
-      _selectedUri  = widget.initialUri;
+      _selectedUri = widget.initialUri;
       _selectedName = widget.initialName;
-      _remember     = true;
+      _remember = true;
     }
     _initUnlockMethod();
   }
@@ -87,8 +87,9 @@ class _UnlockSheetState extends State<UnlockSheet> {
       _unlockMethod = record.unlockMethod;
 
       if (_unlockMethod == ContainerUnlockMethod.pattern) {
-        _storedPatternHash =
-            await ContainerRepository.instance.getPatternHash(widget.initialUri!);
+        _storedPatternHash = await ContainerRepository.instance.getPatternHash(
+          widget.initialUri!,
+        );
       }
 
       if (mounted) setState(() => _loadingAuth = false);
@@ -110,12 +111,15 @@ class _UnlockSheetState extends State<UnlockSheet> {
       final ok = await localAuth.authenticate(
         localizedReason: 'Authenticate to unlock container',
         options: const AuthenticationOptions(
-            biometricOnly: false, stickyAuth: true),
+          biometricOnly: false,
+          stickyAuth: true,
+        ),
       );
       if (ok && mounted) {
         // Fetch saved password and auto-unlock.
-        final pw =
-            await ContainerRepository.instance.getPassword(widget.initialUri!);
+        final pw = await ContainerRepository.instance.getPassword(
+          widget.initialUri!,
+        );
         if (pw != null && pw.isNotEmpty) {
           _passwordCtrl.text = pw;
           _unlock();
@@ -150,8 +154,9 @@ class _UnlockSheetState extends State<UnlockSheet> {
     final attempt = hashPattern(pattern);
     if (attempt == _storedPatternHash) {
       // Pattern matches — fetch saved password and unlock.
-      final pw =
-          await ContainerRepository.instance.getPassword(widget.initialUri!);
+      final pw = await ContainerRepository.instance.getPassword(
+        widget.initialUri!,
+      );
       if (pw != null && pw.isNotEmpty) {
         _passwordCtrl.text = pw;
         _unlock();
@@ -184,9 +189,9 @@ class _UnlockSheetState extends State<UnlockSheet> {
       final result = await vaultExplorerApi.pickContainer();
       if (result != null) {
         setState(() {
-          _selectedUri  = result.uri;
+          _selectedUri = result.uri;
           _selectedName = result.displayName;
-          _error        = null;
+          _error = null;
         });
       }
     } catch (e) {
@@ -203,11 +208,15 @@ class _UnlockSheetState extends State<UnlockSheet> {
       setState(() => _error = 'Password is required');
       return;
     }
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
-      final pim  = clampPim(
-          _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0);
+      final pim = clampPim(
+        _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0,
+      );
       final name = _selectedName ?? 'Container';
 
       final result = await vaultExplorerApi.unlockContainer(
@@ -219,7 +228,6 @@ class _UnlockSheetState extends State<UnlockSheet> {
       );
 
       if (result != null) {
-
         if (_remember && widget.initialUri == null) {
           final record = ContainerRecord(
             uri: _selectedUri!,
@@ -241,17 +249,19 @@ class _UnlockSheetState extends State<UnlockSheet> {
 
         final space = await vaultExplorerApi.getSpaceInfo(tempContainer);
         final total = (space != null && space.isNotEmpty) ? space[0] : 0;
-        final free  = (space != null && space.length > 1) ? space[1] : 0;
+        final free = (space != null && space.length > 1) ? space[1] : 0;
 
-        widget.onMounted(MountedContainer(
-          uri: _selectedUri!,
-          displayName: name,
-          volId: result.volId,
-          rootFiles: result.files,
-          mountedAt: DateTime.now(),
-          totalSpace: total,
-          freeSpace: free,
-        ));
+        widget.onMounted(
+          MountedContainer(
+            uri: _selectedUri!,
+            displayName: name,
+            volId: result.volId,
+            rootFiles: result.files,
+            mountedAt: DateTime.now(),
+            totalSpace: total,
+            freeSpace: free,
+          ),
+        );
 
         HapticFeedback.lightImpact();
 
@@ -274,14 +284,14 @@ class _UnlockSheetState extends State<UnlockSheet> {
     if (_showPasswordFallback) return true;
     if (widget.initialUri == null) return true; // fresh mount — always show
     return _unlockMethod == ContainerUnlockMethod.password ||
-           _unlockMethod == ContainerUnlockMethod.rememberPassword;
+        _unlockMethod == ContainerUnlockMethod.rememberPassword;
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final mq        = MediaQuery.of(context);
+    final mq = MediaQuery.of(context);
 
     return Padding(
       padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
@@ -293,16 +303,18 @@ class _UnlockSheetState extends State<UnlockSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(children: [
-                Text(
-                  widget.initialUri != null
-                      ? 'Unlock Container'
-                      : 'Mount Container',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+              Row(
+                children: [
+                  Text(
+                    widget.initialUri != null
+                        ? 'Unlock Container'
+                        : 'Mount Container',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
               const SizedBox(height: 16),
 
               // File picker
@@ -310,7 +322,9 @@ class _UnlockSheetState extends State<UnlockSheet> {
                 onTap: _pickFile,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 16),
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
                   decoration: BoxDecoration(
                     color: cs.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(12),
@@ -321,51 +335,63 @@ class _UnlockSheetState extends State<UnlockSheet> {
                       width: _selectedUri != null ? 1.5 : 1,
                     ),
                   ),
-                  child: Row(children: [
-                    Icon(
-                      _selectedUri != null
-                          ? Icons.description_outlined
-                          : Icons.folder_open_rounded,
-                      size: 20,
-                      color: _selectedUri != null
-                          ? cs.primary
-                          : cs.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _selectedName ?? 'Select VeraCrypt container…',
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: _selectedUri != null
-                              ? cs.onSurface
-                              : cs.onSurfaceVariant,
+                  child: Row(
+                    children: [
+                      Icon(
+                        _selectedUri != null
+                            ? Icons.description_outlined
+                            : Icons.folder_open_rounded,
+                        size: 20,
+                        color: _selectedUri != null
+                            ? cs.primary
+                            : cs.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _selectedName ?? 'Select VeraCrypt container…',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: _selectedUri != null
+                                ? cs.onSurface
+                                : cs.onSurfaceVariant,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    if (_selectedUri != null &&
-                        widget.initialUri == null) ...[
-                      GestureDetector(
-                        onTap: () => setState(
-                            () { _selectedUri = null; _selectedName = null; }),
-                        child: Icon(Icons.clear_rounded,
-                            size: 18, color: cs.onSurfaceVariant),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(Icons.check_circle_rounded,
-                          size: 18, color: cs.primary),
-                    ] else if (_selectedUri != null &&
-                        widget.initialUri != null) ...[
-                      Icon(Icons.lock_outline_rounded,
-                          size: 18, color: cs.primary),
+                      if (_selectedUri != null &&
+                          widget.initialUri == null) ...[
+                        GestureDetector(
+                          onTap: () => setState(() {
+                            _selectedUri = null;
+                            _selectedName = null;
+                          }),
+                          child: Icon(
+                            Icons.clear_rounded,
+                            size: 18,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.check_circle_rounded,
+                          size: 18,
+                          color: cs.primary,
+                        ),
+                      ] else if (_selectedUri != null &&
+                          widget.initialUri != null) ...[
+                        Icon(
+                          Icons.lock_outline_rounded,
+                          size: 18,
+                          color: cs.primary,
+                        ),
+                      ],
                     ],
-                  ]),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
 
               // ── Auth-specific UI ──────────────────────────────────────────
-
               if (_loadingAuth)
                 const Center(
                   child: Padding(
@@ -377,41 +403,70 @@ class _UnlockSheetState extends State<UnlockSheet> {
                     ),
                   ),
                 )
-
               // ── Biometric prompt feedback ──────────────────────────────
               else if (_unlockMethod == ContainerUnlockMethod.biometrics &&
-                       !_showPasswordFallback) ...[
+                  !_showPasswordFallback) ...[
                 Center(
-                  child: Column(children: [
-                    Icon(Icons.fingerprint_rounded,
-                        size: 56, color: cs.primary),
-                    const SizedBox(height: 12),
-                    Text('Waiting for biometric...',
-                        style: textTheme.bodyMedium
-                            ?.copyWith(color: cs.onSurfaceVariant)),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: _tryBiometric,
-                      child: const Text('Retry'),
-                    ),
-                    TextButton(
-                      onPressed: () =>
-                          setState(() => _showPasswordFallback = true),
-                      child: const Text('Use Password'),
-                    ),
-                  ]),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.fingerprint_rounded,
+                        size: 56,
+                        color: cs.primary,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Waiting for biometric...',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: _tryBiometric,
+                        child: const Text('Retry'),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            setState(() => _showPasswordFallback = true),
+                        child: const Text('Use Password'),
+                      ),
+                    ],
+                  ),
                 ),
               ]
-
               // ── Pattern grid ───────────────────────────────────────────
               else if (_unlockMethod == ContainerUnlockMethod.pattern &&
-                       !_showPasswordFallback) ...[
+                  !_showPasswordFallback) ...[
                 Center(
-                  child: Column(children: [
-                    Text(
-                      _patternError ? 'Wrong pattern — try again' : 'Draw your unlock pattern',
-                      style: textTheme.bodyMedium?.copyWith(
-                                // ── Standard password fields ───────────────────────────────
+                  child: Column(
+                    children: [
+                      Text(
+                        _patternError
+                            ? 'Wrong pattern — try again'
+                            : 'Draw your unlock pattern',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: _patternError ? cs.error : cs.onSurfaceVariant,
+                          fontWeight: _patternError ? FontWeight.bold : null,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      PatternLockView(
+                        key: ValueKey(_patternResetKey),
+                        onPatternComplete: _onPatternComplete,
+                        showError: _patternError,
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () =>
+                            setState(() => _showPasswordFallback = true),
+                        child: const Text('Use Password'),
+                      ),
+                    ],
+                  ),
+                ),
+              ]
+              // ── Standard password fields ───────────────────────────────
               else if (_showPasswordUI) ...[
                 AutofillGroup(
                   child: Column(
@@ -420,7 +475,8 @@ class _UnlockSheetState extends State<UnlockSheet> {
                       TextField(
                         controller: _passwordCtrl,
                         obscureText: _obscure,
-                        autofocus: widget.initialUri != null &&
+                        autofocus:
+                            widget.initialUri != null &&
                             widget.prefillPassword?.isEmpty != false,
                         onChanged: (_) => setState(() {}),
                         keyboardType: TextInputType.visiblePassword,
@@ -428,26 +484,33 @@ class _UnlockSheetState extends State<UnlockSheet> {
                         decoration: InputDecoration(
                           labelText: 'Password',
                           prefixIcon: const Icon(Icons.key_outlined, size: 18),
-                          suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
-                            if (_passwordPrefilled)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 4),
-                                child: Tooltip(
-                                  message: 'Using saved password',
-                                  child: Icon(Icons.bookmark_rounded,
-                                      size: 18, color: cs.primary),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_passwordPrefilled)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 4),
+                                  child: Tooltip(
+                                    message: 'Using saved password',
+                                    child: Icon(
+                                      Icons.bookmark_rounded,
+                                      size: 18,
+                                      color: cs.primary,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            IconButton(
-                              onPressed: () =>
-                                  setState(() => _obscure = !_obscure),
-                              icon: Icon(
+                              IconButton(
+                                onPressed: () =>
+                                    setState(() => _obscure = !_obscure),
+                                icon: Icon(
                                   _obscure
                                       ? Icons.visibility_outlined
                                       : Icons.visibility_off_outlined,
-                                  size: 18),
-                            ),
-                          ]),
+                                  size: 18,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -461,72 +524,61 @@ class _UnlockSheetState extends State<UnlockSheet> {
                       ),
                       if (widget.initialUri == null) ...[
                         const SizedBox(height: 10),
-                        Row(children: [
-                          Checkbox(
-                            value: _remember,
-                            onChanged: (val) =>
-                                setState(() => _remember = val ?? false),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          const SizedBox(width: 10),
-                          GestureDetector(
-                            onTap: () => setState(() => _remember = !_remember),
-                            child: Text(
-                              'Remember container on dashboard',
-                              style: textTheme.bodyMedium,
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _remember,
+                              onChanged: (val) =>
+                                  setState(() => _remember = val ?? false),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                             ),
-                          ),
-                        ]),
+                            const SizedBox(width: 10),
+                            GestureDetector(
+                              onTap: () =>
+                                  setState(() => _remember = !_remember),
+                              child: Text(
+                                'Remember container on dashboard',
+                                style: textTheme.bodyMedium,
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ],
                   ),
                 ),
-              ],    ),
-                ),
-
-                if (widget.initialUri == null) ...[
-                  const SizedBox(height: 10),
-                  Row(children: [
-                    Checkbox(
-                      value: _remember,
-                      onChanged: (val) =>
-                          setState(() => _remember = val ?? false),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: () => setState(() => _remember = !_remember),
-                      child: Text(
-                        'Remember container on dashboard',
-                        style: textTheme.bodyMedium,
-                      ),
-                    ),
-                  ]),
-                ],
               ],
 
               if (_error != null) ...[
                 const SizedBox(height: 14),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: cs.errorContainer,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Row(children: [
-                    Icon(Icons.error_outline_rounded,
-                        size: 20, color: cs.onErrorContainer),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _error!,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: cs.onErrorContainer,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline_rounded,
+                        size: 20,
+                        color: cs.onErrorContainer,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: cs.onErrorContainer,
+                          ),
                         ),
                       ),
-                    ),
-                  ]),
+                    ],
+                  ),
                 ),
               ],
 
@@ -544,8 +596,7 @@ class _UnlockSheetState extends State<UnlockSheet> {
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.5,
-                            valueColor:
-                                AlwaysStoppedAnimation(cs.onPrimary),
+                            valueColor: AlwaysStoppedAnimation(cs.onPrimary),
                           ),
                         )
                       : const Text('Unlock'),

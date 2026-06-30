@@ -17,7 +17,9 @@ abstract class BrowserDialogs {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('New Folder'), // Inherits standard typography scale from dialogTheme
+        title: const Text(
+          'New Folder',
+        ), // Inherits standard typography scale from dialogTheme
         content: TextField(
           controller: ctrl,
           decoration: const InputDecoration(hintText: 'Folder name'),
@@ -33,8 +35,9 @@ abstract class BrowserDialogs {
               final name = ctrl.text.trim();
               if (name.isEmpty) return;
               Navigator.pop(context);
-              final full =
-                  currentDirPath.isEmpty ? name : '$currentDirPath/$name';
+              final full = currentDirPath.isEmpty
+                  ? name
+                  : '$currentDirPath/$name';
               if (await vaultExplorerApi.createDirectory(container, full)) {
                 onSuccess();
               }
@@ -72,8 +75,9 @@ abstract class BrowserDialogs {
               final name = ctrl.text.trim();
               if (name.isEmpty) return;
               Navigator.pop(context);
-              final full =
-                  currentDirPath.isEmpty ? name : '$currentDirPath/$name';
+              final full = currentDirPath.isEmpty
+                  ? name
+                  : '$currentDirPath/$name';
               if (await vaultExplorerApi.createEmptyFile(container, full)) {
                 onSuccess();
               }
@@ -115,7 +119,10 @@ abstract class BrowserDialogs {
                   ? newName
                   : '$currentDirPath/$newName';
               if (await vaultExplorerApi.renameFile(
-                  container, oldFull, newFull)) {
+                container,
+                oldFull,
+                newFull,
+              )) {
                 onSuccess();
               }
             },
@@ -155,8 +162,10 @@ abstract class BrowserDialogs {
               onConfirmed(toDelete);
             },
             child: Text(
-              'Delete', 
-              style: TextStyle(color: cs.error), // Uses the dynamic dark-palette error color
+              'Delete',
+              style: TextStyle(
+                color: cs.error,
+              ), // Uses the dynamic dark-palette error color
             ),
           ),
         ],

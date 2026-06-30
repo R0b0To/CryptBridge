@@ -3,25 +3,25 @@ import 'package:flutter/services.dart';
 
 ThemeData buildTheme() {
   // Official Material Design 3 Baseline Dark Tokens (Google Blue Seed)
-  const surface               = Color(0xFF111318);
-  const surfaceContainerLow   = Color(0xFF191C20);
-  const surfaceContainer      = Color(0xFF1D2024);
-  const surfaceContainerHigh  = Color(0xFF272A2F);
+  const surface = Color(0xFF111318);
+  const surfaceContainerLow = Color(0xFF191C20);
+  const surfaceContainer = Color(0xFF1D2024);
+  const surfaceContainerHigh = Color(0xFF272A2F);
   const surfaceContainerHighest = Color(0xFF32353A);
-  
-  const onSurface        = Color(0xFFE2E2E9);
-  const onSurfaceVariant = Color(0xFFC2C7CF);
-  const outline          = Color(0xFF8C9199);
-  const outlineVariant   = Color(0xFF42474E);
 
-  const primary          = Color(0xFFA8C7FA); // MD3 Pastel Blue
-  const onPrimary        = Color(0xFF062E6F); // Deep Navy
+  const onSurface = Color(0xFFE2E2E9);
+  const onSurfaceVariant = Color(0xFFC2C7CF);
+  const outline = Color(0xFF8C9199);
+  const outlineVariant = Color(0xFF42474E);
+
+  const primary = Color(0xFFA8C7FA); // MD3 Pastel Blue
+  const onPrimary = Color(0xFF062E6F); // Deep Navy
   const primaryContainer = Color(0xFF0842A0);
   const onPrimaryContainer = Color(0xFFD3E3FD);
 
-  const secondary        = Color(0xFFBEC6DC);
-  const errorColor       = Color(0xFFFFB4AB);
-  const onErrorColor     = Color(0xFF690005);
+  const secondary = Color(0xFFBEC6DC);
+  const errorColor = Color(0xFFFFB4AB);
+  const onErrorColor = Color(0xFF690005);
 
   return ThemeData(
     useMaterial3: true,
@@ -50,7 +50,7 @@ ThemeData buildTheme() {
       foregroundColor: onSurface,
       elevation: 0,
       scrolledUnderElevation: 3, // Native MD3 tonal tint when scrolling
-      centerTitle: false,        // Native Android left-aligns titles
+      centerTitle: false, // Native Android left-aligns titles
       titleTextStyle: TextStyle(
         fontSize: 22,
         fontWeight: FontWeight.w400,
@@ -61,7 +61,8 @@ ThemeData buildTheme() {
       systemOverlayStyle: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
-        systemNavigationBarColor: Colors.transparent, // Android 15/16 Edge-to-Edge
+        systemNavigationBarColor:
+            Colors.transparent, // Android 15/16 Edge-to-Edge
         systemNavigationBarIconBrightness: Brightness.light,
       ),
     ),
@@ -77,7 +78,7 @@ ThemeData buildTheme() {
     ),
 
     inputDecorationTheme: InputDecorationTheme(
-      filled: false, 
+      filled: false,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(4), // MD3 standard input radius
@@ -123,7 +124,9 @@ ThemeData buildTheme() {
         if (states.contains(WidgetState.selected)) return primary;
         return Colors.transparent;
       }),
-      checkColor: WidgetStateProperty.all(onPrimary), // Navy tick on pastel blue
+      checkColor: WidgetStateProperty.all(
+        onPrimary,
+      ), // Navy tick on pastel blue
       side: const BorderSide(color: onSurfaceVariant, width: 2),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
     ),
@@ -132,8 +135,8 @@ ThemeData buildTheme() {
       style: FilledButton.styleFrom(
         backgroundColor: primary,
         foregroundColor: onPrimary,
-        disabledBackgroundColor: onSurface.withValues(alpha:0.12),
-        disabledForegroundColor: onSurface.withValues(alpha:0.38),
+        disabledBackgroundColor: onSurface.withValues(alpha: 0.12),
+        disabledForegroundColor: onSurface.withValues(alpha: 0.38),
         textStyle: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w500,
@@ -168,7 +171,9 @@ ThemeData buildTheme() {
       backgroundColor: surfaceContainerLow,
       modalBackgroundColor: surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)), // Big MD3 radius
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(28),
+        ), // Big MD3 radius
       ),
       showDragHandle: true, // Native Android drag pill
       elevation: 1,
@@ -187,16 +192,13 @@ ThemeData buildTheme() {
       backgroundColor: surfaceContainerHigh,
       elevation: 6,
       shadowColor: Colors.black45,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)), 
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       titleTextStyle: const TextStyle(
         color: onSurface,
         fontSize: 24,
         fontWeight: FontWeight.w400,
       ),
-      contentTextStyle: const TextStyle(
-        color: onSurfaceVariant,
-        fontSize: 14,
-      ),
+      contentTextStyle: const TextStyle(color: onSurfaceVariant, fontSize: 14),
     ),
 
     progressIndicatorTheme: const ProgressIndicatorThemeData(
@@ -205,13 +207,48 @@ ThemeData buildTheme() {
     ),
 
     textTheme: const TextTheme(
-      bodyLarge:   TextStyle(color: onSurface,        fontSize: 16, height: 1.5,  letterSpacing: 0.5),
-      bodyMedium:  TextStyle(color: onSurface,        fontSize: 14, height: 1.4,  letterSpacing: 0.25),
-      bodySmall:   TextStyle(color: onSurfaceVariant, fontSize: 12, height: 1.3,  letterSpacing: 0.4),
-      labelLarge:  TextStyle(color: onSurface,        fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0.1),
-      labelMedium: TextStyle(color: onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500, letterSpacing: 0.5),
-      titleMedium: TextStyle(color: onSurface,        fontSize: 16, fontWeight: FontWeight.w500, letterSpacing: 0.15),
-      titleSmall:  TextStyle(color: onSurface,        fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0.1),
+      bodyLarge: TextStyle(
+        color: onSurface,
+        fontSize: 16,
+        height: 1.5,
+        letterSpacing: 0.5,
+      ),
+      bodyMedium: TextStyle(
+        color: onSurface,
+        fontSize: 14,
+        height: 1.4,
+        letterSpacing: 0.25,
+      ),
+      bodySmall: TextStyle(
+        color: onSurfaceVariant,
+        fontSize: 12,
+        height: 1.3,
+        letterSpacing: 0.4,
+      ),
+      labelLarge: TextStyle(
+        color: onSurface,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.1,
+      ),
+      labelMedium: TextStyle(
+        color: onSurfaceVariant,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.5,
+      ),
+      titleMedium: TextStyle(
+        color: onSurface,
+        fontSize: 16,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.15,
+      ),
+      titleSmall: TextStyle(
+        color: onSurface,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.1,
+      ),
     ),
   );
 }

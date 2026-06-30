@@ -7,8 +7,7 @@ class CreateContainerSheet extends StatefulWidget {
   const CreateContainerSheet({Key? key}) : super(key: key);
 
   @override
-  State<CreateContainerSheet> createState() =>
-      _CreateContainerSheetState();
+  State<CreateContainerSheet> createState() => _CreateContainerSheetState();
 }
 
 class _CreateContainerSheetState extends State<CreateContainerSheet> {
@@ -53,12 +52,12 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
     });
 
     try {
-      final multiplier =
-          _sizeUnit == 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024;
+      final multiplier = _sizeUnit == 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024;
       final sizeBytes = (sizeVal * multiplier).round();
 
       final pim = clampPim(
-          _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0);
+        _pimCtrl.text.isEmpty ? 0 : int.tryParse(_pimCtrl.text) ?? 0,
+      );
 
       final success = await vaultExplorerApi.createContainer(
         displayName: _nameCtrl.text,
@@ -73,12 +72,12 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('Container file created successfully.')),
+              content: Text('Container file created successfully.'),
+            ),
           );
         }
       } else {
-        setState(
-            () => _error = 'Container creation cancelled or failed.');
+        setState(() => _error = 'Container creation cancelled or failed.');
       }
     } on PlatformException catch (e) {
       setState(() => _error = e.message ?? 'Unknown error occurred');
@@ -106,162 +105,166 @@ class _CreateContainerSheetState extends State<CreateContainerSheet> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                Text(
-                  'Create VeraCrypt Container',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  Text(
+                    'Create VeraCrypt Container',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                // File name
-                TextField(
-                  controller: _nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'File Name',
-                    prefixIcon: Icon(Icons.drive_file_rename_outline_rounded,
-                        size: 18),
+                  // File name
+                  TextField(
+                    controller: _nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'File Name',
+                      prefixIcon: Icon(
+                        Icons.drive_file_rename_outline_rounded,
+                        size: 18,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-                // Size and unit selection
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: _sizeCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
-                                decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Container Size',
-                          prefixIcon:
-                              Icon(Icons.sd_card_outlined, size: 18),
+                  // Size and unit selection
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: _sizeCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Container Size',
+                            prefixIcon: Icon(Icons.sd_card_outlined, size: 18),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: _sizeUnit,
-                        decoration:
-                            const InputDecoration(labelText: 'Unit'),
-                        items: const [
-                          DropdownMenuItem(
-                              value: 'MB', child: Text('MB')),
-                          DropdownMenuItem(
-                              value: 'GB', child: Text('GB')),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _sizeUnit = val);
-                          }
-                        },
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _sizeUnit,
+                          decoration: const InputDecoration(labelText: 'Unit'),
+                          items: const [
+                            DropdownMenuItem(value: 'MB', child: Text('MB')),
+                            DropdownMenuItem(value: 'GB', child: Text('GB')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _sizeUnit = val);
+                            }
+                          },
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
 
-                // Password
-                TextField(
-                  controller: _passwordCtrl,
-                  obscureText: _obscure,
-                  autofillHints: const [AutofillHints.password],
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    prefixIcon:
-                        const Icon(Icons.key_rounded, size: 18),
-                    suffixIcon: IconButton(
-                      onPressed: () =>
-                          setState(() => _obscure = !_obscure),
-                      icon: Icon(
+                  // Password
+                  TextField(
+                    controller: _passwordCtrl,
+                    obscureText: _obscure,
+                    autofillHints: const [AutofillHints.password],
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.key_rounded, size: 18),
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                        icon: Icon(
                           _obscure
                               ? Icons.visibility_outlined
                               : Icons.visibility_off_outlined,
-                          size: 18),
+                          size: 18,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-                // PIM
-                TextField(
-                  controller: _pimCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'PIM  (leave blank for default)',
-                    prefixIcon: Icon(Icons.tune_rounded, size: 18),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // File System selection
-                DropdownButtonFormField<String>(
-                  value: _fileSystem,
-                  decoration: const InputDecoration(
-                    labelText: 'Format File System',
-                    prefixIcon: Icon(Icons.dns_rounded, size: 18),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                        value: 'FAT', child: Text('FAT (FAT32)')),
-                    DropdownMenuItem(
-                        value: 'exFAT', child: Text('exFAT')),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) setState(() => _fileSystem = val);
-                  },
-                ),
-
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: cs.errorContainer,
-                      borderRadius: BorderRadius.circular(12),
+                  // PIM
+                  TextField(
+                    controller: _pimCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'PIM  (leave blank for default)',
+                      prefixIcon: Icon(Icons.tune_rounded, size: 18),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.error_outline_rounded,
-                            size: 20, color: cs.onErrorContainer),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _error!,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: cs.onErrorContainer,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // File System selection
+                  DropdownButtonFormField<String>(
+                    value: _fileSystem,
+                    decoration: const InputDecoration(
+                      labelText: 'Format File System',
+                      prefixIcon: Icon(Icons.dns_rounded, size: 18),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'FAT',
+                        child: Text('FAT (FAT32)'),
+                      ),
+                      DropdownMenuItem(value: 'exFAT', child: Text('exFAT')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) setState(() => _fileSystem = val);
+                    },
+                  ),
+
+                  if (_error != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: cs.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            size: 20,
+                            color: cs.onErrorContainer,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: cs.onErrorContainer,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                  ],
+
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: _loading ? null : _create,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                    child: _loading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation(cs.onPrimary),
+                            ),
+                          )
+                        : const Text('Create Container'),
                   ),
                 ],
-
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: _loading ? null : _create,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                  child: _loading
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation(cs.onPrimary),
-                          ),
-                        )
-                      : const Text('Create Container'),
-                ),
-              ],
+              ),
             ),
-          ),
           ),
         ),
       ),

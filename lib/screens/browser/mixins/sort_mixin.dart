@@ -9,7 +9,7 @@ enum SortBy { name, size, extension, date }
 /// Uses [RawEntry.parse] so it handles the full three-field wire format
 /// ("name|size|unixSecs" / "[DIR] name|0|unixSecs") correctly.
 mixin SortMixin<T extends StatefulWidget> on State<T> {
-  SortBy sortBy      = SortBy.name;
+  SortBy sortBy = SortBy.name;
   bool sortAscending = true;
 
   void setSort(SortBy by) {
@@ -21,10 +21,10 @@ mixin SortMixin<T extends StatefulWidget> on State<T> {
         // Sensible defaults: alphabetical fields start A→Z; magnitude fields
         // start largest/newest first so the most relevant items are on top.
         sortAscending = switch (by) {
-          SortBy.name      => true,
+          SortBy.name => true,
           SortBy.extension => true,
-          SortBy.size      => false, // largest first
-          SortBy.date      => false, // newest first
+          SortBy.size => false, // largest first
+          SortBy.date => false, // newest first
         };
       }
     });
@@ -68,7 +68,7 @@ mixin SortMixin<T extends StatefulWidget> on State<T> {
   /// Builds a [PopupMenuItem] for the sort menu, annotated with the current
   /// direction arrow when active.
   PopupMenuItem<SortBy> buildSortMenuItem(SortBy value, String label) {
-    final cs       = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final isActive = sortBy == value;
     return PopupMenuItem(
       value: value,

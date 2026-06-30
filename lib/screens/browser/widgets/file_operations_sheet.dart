@@ -24,7 +24,7 @@ class FileOperationsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return DraggableScrollableSheet(
@@ -36,9 +36,9 @@ class FileOperationsSheet extends StatelessWidget {
         return ListenableBuilder(
           listenable: FileOperationService.instance,
           builder: (context, _) {
-            final ops = FileOperationService.instance.operations.reversed.toList();
-            final hasActive =
-                FileOperationService.instance.activeCount > 0;
+            final ops = FileOperationService.instance.operations.reversed
+                .toList();
+            final hasActive = FileOperationService.instance.activeCount > 0;
 
             return Column(
               children: [
@@ -46,12 +46,17 @@ class FileOperationsSheet extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(20, 0, 8, 12),
                   child: Row(
                     children: [
-                      Icon(Icons.swap_horiz_rounded,
-                          size: 20, color: cs.primary),
+                      Icon(
+                        Icons.swap_horiz_rounded,
+                        size: 20,
+                        color: cs.primary,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          hasActive ? 'Transfers in progress' : 'Recent transfers',
+                          hasActive
+                              ? 'Transfers in progress'
+                              : 'Recent transfers',
                           style: textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -65,7 +70,9 @@ class FileOperationsSheet extends StatelessWidget {
                           },
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
@@ -88,8 +95,7 @@ class FileOperationsSheet extends StatelessWidget {
                           itemCount: ops.length,
                           separatorBuilder: (_, __) =>
                               const Divider(height: 1, indent: 20),
-                          itemBuilder: (_, i) =>
-                              _OperationRow(op: ops[i]),
+                          itemBuilder: (_, i) => _OperationRow(op: ops[i]),
                         ),
                 ),
               ],
@@ -110,18 +116,18 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle_outline_rounded,
-                size: 40, color: cs.outline),
-            const SizedBox(height: 12),
-            Text('No recent transfers',
-                style: textTheme.bodyMedium
-                    ?.copyWith(color: cs.onSurfaceVariant)),
-          ],
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.check_circle_outline_rounded, size: 40, color: cs.outline),
+        const SizedBox(height: 12),
+        Text(
+          'No recent transfers',
+          style: textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 // ── Single operation row ──────────────────────────────────────────────────────
@@ -135,24 +141,26 @@ class _OperationRow extends StatelessWidget {
     return ListenableBuilder(
       listenable: op,
       builder: (context, _) {
-        final cs        = Theme.of(context).colorScheme;
+        final cs = Theme.of(context).colorScheme;
         final textTheme = Theme.of(context).textTheme;
 
-        final isActive = op.status == FileOperationStatus.pending ||
+        final isActive =
+            op.status == FileOperationStatus.pending ||
             op.status == FileOperationStatus.running;
-        final isError  = op.status == FileOperationStatus.failed ||
+        final isError =
+            op.status == FileOperationStatus.failed ||
             op.status == FileOperationStatus.diskFull ||
             op.status == FileOperationStatus.completedWithErrors;
-        final isDone   = op.status == FileOperationStatus.completed;
+        final isDone = op.status == FileOperationStatus.completed;
         final isCancelled = op.status == FileOperationStatus.cancelled;
 
         final statusColor = isError
             ? cs.error
             : isDone
-                ? cs.primary
-                : isCancelled
-                    ? cs.onSurfaceVariant
-                    : cs.onSurface;
+            ? cs.primary
+            : isCancelled
+            ? cs.onSurfaceVariant
+            : cs.onSurface;
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -191,14 +199,19 @@ class _OperationRow extends StatelessWidget {
                   ),
                   if (isActive)
                     IconButton(
-                      icon: Icon(Icons.close_rounded,
-                          size: 18, color: cs.onSurfaceVariant),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: cs.onSurfaceVariant,
+                      ),
                       tooltip: 'Cancel',
                       onPressed: op.requestCancel,
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(
-                          minWidth: 32, minHeight: 32),
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
                     ),
                 ],
               ),
@@ -221,8 +234,9 @@ class _OperationRow extends StatelessWidget {
                   op.currentActivity.isNotEmpty
                       ? op.currentActivity
                       : op.shortSummary,
-                  style: textTheme.bodySmall
-                      ?.copyWith(color: cs.onSurfaceVariant),
+                  style: textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -234,14 +248,16 @@ class _OperationRow extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(Icons.error_outline_rounded,
-                          size: 14, color: cs.error),
+                      Icon(
+                        Icons.error_outline_rounded,
+                        size: 14,
+                        color: cs.error,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           op.errorSummary!,
-                          style: textTheme.bodySmall
-                              ?.copyWith(color: cs.error),
+                          style: textTheme.bodySmall?.copyWith(color: cs.error),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -252,8 +268,9 @@ class _OperationRow extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     op.completionSummary,
-                    style: textTheme.bodySmall
-                        ?.copyWith(color: cs.onSurfaceVariant),
+                    style: textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ],
@@ -262,8 +279,9 @@ class _OperationRow extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   'Cancelled',
-                  style: textTheme.bodySmall
-                      ?.copyWith(color: cs.onSurfaceVariant),
+                  style: textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
                 ),
               ],
 
@@ -316,7 +334,11 @@ class _StatusIcon extends StatelessWidget {
       case FileOperationStatus.diskFull:
         return Icon(Icons.error_outline_rounded, size: 18, color: cs.error);
       case FileOperationStatus.cancelled:
-        return Icon(Icons.cancel_outlined, size: 18, color: cs.onSurfaceVariant);
+        return Icon(
+          Icons.cancel_outlined,
+          size: 18,
+          color: cs.onSurfaceVariant,
+        );
     }
   }
 }
@@ -327,8 +349,11 @@ class _FailedItemsDetail extends StatefulWidget {
   final FileOperation op;
   final ColorScheme cs;
   final TextTheme textTheme;
-  const _FailedItemsDetail(
-      {required this.op, required this.cs, required this.textTheme});
+  const _FailedItemsDetail({
+    required this.op,
+    required this.cs,
+    required this.textTheme,
+  });
 
   @override
   State<_FailedItemsDetail> createState() => _FailedItemsDetailState();
@@ -361,37 +386,43 @@ class _FailedItemsDetailState extends State<_FailedItemsDetail> {
               const SizedBox(width: 4),
               Text(
                 '${failed.length} item${failed.length == 1 ? '' : 's'} failed',
-                style: widget.textTheme.bodySmall
-                    ?.copyWith(color: widget.cs.error),
+                style: widget.textTheme.bodySmall?.copyWith(
+                  color: widget.cs.error,
+                ),
               ),
             ],
           ),
         ),
         if (_expanded) ...[
           const SizedBox(height: 6),
-          ...failed.map((s) => Padding(
-                padding: const EdgeInsets.only(left: 20, bottom: 4),
-                child: Row(
-                  children: [
-                    Icon(Icons.subdirectory_arrow_right_rounded,
-                        size: 12, color: widget.cs.onSurfaceVariant),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        s.item.name +
-                            (s.errorMessage != null
-                                ? ' — ${s.errorMessage}'
-                                : ''),
-                        style: widget.textTheme.bodySmall?.copyWith(
-                          color: widget.cs.onSurfaceVariant,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+          ...failed.map(
+            (s) => Padding(
+              padding: const EdgeInsets.only(left: 20, bottom: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.subdirectory_arrow_right_rounded,
+                    size: 12,
+                    color: widget.cs.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      s.item.name +
+                          (s.errorMessage != null
+                              ? ' — ${s.errorMessage}'
+                              : ''),
+                      style: widget.textTheme.bodySmall?.copyWith(
+                        color: widget.cs.onSurfaceVariant,
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ],
-                ),
-              )),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ],
     );

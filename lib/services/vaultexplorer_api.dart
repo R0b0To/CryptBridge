@@ -25,9 +25,8 @@ class VaultExplorerApi {
     });
   }
 
-
   static final Set<int> _activeBatches = {};
-  static final Set<int> _lockPending   = {};
+  static final Set<int> _lockPending = {};
 
   void beginBatch(int volId) {
     _activeBatches.add(volId);
@@ -74,11 +73,7 @@ class VaultExplorerApi {
     assert(salt.isNotEmpty, 'salt must not be empty');
     final result = await _channel.invokeMethod<Uint8List>(
       ChannelMethods.hashPassword,
-      {
-        'password':   password,
-        'salt':       salt,
-        'iterations': iterations,
-      },
+      {'password': password, 'salt': salt, 'iterations': iterations},
     );
     return result;
   }
@@ -92,22 +87,21 @@ class VaultExplorerApi {
     required int pim,
     required String fileSystem,
   }) async {
-    final bool? success = await _channel.invokeMethod<bool>(
-      ChannelMethods.createContainer,
-      {
-        'displayName': displayName,
-        'sizeBytes':   sizeBytes,
-        'password':    password,
-        'pim':         pim,
-        'fileSystem':  fileSystem,
-      },
-    );
+    final bool? success = await _channel
+        .invokeMethod<bool>(ChannelMethods.createContainer, {
+          'displayName': displayName,
+          'sizeBytes': sizeBytes,
+          'password': password,
+          'pim': pim,
+          'fileSystem': fileSystem,
+        });
     return success ?? false;
   }
 
   Future<({String uri, String displayName})?> pickContainer() async {
-    final raw = await _channel
-        .invokeMethod<Map<Object?, Object?>>(ChannelMethods.pickContainer);
+    final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
+      ChannelMethods.pickContainer,
+    );
     if (raw == null) return null;
     return (
       uri: raw['uri'] as String,
@@ -122,16 +116,14 @@ class VaultExplorerApi {
     String? displayName,
     bool documentProvider = false,
   }) async {
-    final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
-      ChannelMethods.unlockContainer,
-      {
-        'filePath':         filePath,
-        'password':         password,
-        'pim':              pim,
-        if (displayName != null) 'displayName': displayName,
-        'documentProvider': documentProvider,
-      },
-    );
+    final raw = await _channel
+        .invokeMethod<Map<Object?, Object?>>(ChannelMethods.unlockContainer, {
+          'filePath': filePath,
+          'password': password,
+          'pim': pim,
+          'displayName': ?displayName,
+          'documentProvider': documentProvider,
+        });
     if (raw == null) return null;
     final volId = raw['volId'] as int;
     final files = (raw['files'] as List<Object?>).cast<String>();
@@ -147,47 +139,51 @@ class VaultExplorerApi {
   }
 
   Future<bool> updateContainerSettings(
-      String filePath, String displayName, bool documentProvider) async {
-    final result = await _channel.invokeMethod<bool>(
-      ChannelMethods.updateContainerSettings,
-      {
-        'filePath': filePath,
-        'displayName': displayName,
-        'documentProvider': documentProvider,
-      },
-    );
+    String filePath,
+    String displayName,
+    bool documentProvider,
+  ) async {
+    final result = await _channel
+        .invokeMethod<bool>(ChannelMethods.updateContainerSettings, {
+          'filePath': filePath,
+          'displayName': displayName,
+          'documentProvider': documentProvider,
+        });
     return result ?? false;
   }
 
   // ── File I/O ──────────────────────────────────────────────────────────────
 
-  Future<bool> openWithApp(MountedContainer container, String fileName, {String? packageName}) async {
-    final result = await _channel.invokeMethod<bool>(
-      ChannelMethods.openWithApp,
-      {
-        'filePath': container.uri,
-        'fileName': fileName,
-        if (packageName != null) 'packageName': packageName,
-      },
-    );
+  Future<bool> openWithApp(
+    MountedContainer container,
+    String fileName, {
+    String? packageName,
+  }) async {
+    final result = await _channel
+        .invokeMethod<bool>(ChannelMethods.openWithApp, {
+          'filePath': container.uri,
+          'fileName': fileName,
+          if (packageName != null) 'packageName': packageName,
+        });
     return result ?? false;
   }
 
   Future<bool> decryptFile(
-      MountedContainer container, String fileName, String destPath) async {
+    MountedContainer container,
+    String fileName,
+    String destPath,
+  ) async {
     final result = await _channel.invokeMethod<bool>(
       ChannelMethods.decryptFile,
-      {
-        'filePath': container.uri,
-        'fileName': fileName,
-        'destPath': destPath,
-      },
+      {'filePath': container.uri, 'fileName': fileName, 'destPath': destPath},
     );
     return result ?? false;
   }
 
   Future<bool> exportFileToStorage(
-      MountedContainer container, String sourcePath) async {
+    MountedContainer container,
+    String sourcePath,
+  ) async {
     final result = await _channel.invokeMethod<bool>(
       ChannelMethods.exportFileToStorage,
       {'filePath': container.uri, 'sourcePath': sourcePath},
@@ -202,6 +198,7 @@ class VaultExplorerApi {
     );
     return result ?? 0;
   }
+
   /// Returns the recursive byte total of all files inside [dirPath].
   ///
   /// This is a potentially slow operation for large directory trees; callers
@@ -218,14 +215,18 @@ class VaultExplorerApi {
   }
 
   Future<Uint8List?> readFileChunk(
-      MountedContainer container, String fileName, int offset, int length) async {
+    MountedContainer container,
+    String fileName,
+    int offset,
+    int length,
+  ) async {
     final result = await _channel.invokeMethod<Uint8List>(
       ChannelMethods.readFileChunk,
       {
         'filePath': container.uri,
         'fileName': fileName,
-        'offset':   offset,
-        'length':   length,
+        'offset': offset,
+        'length': length,
       },
     );
     return result;
@@ -234,7 +235,10 @@ class VaultExplorerApi {
   /// Requests a scaled image thumbnail from the native Android JPEG pipeline.
   /// Returns null on failure — callers will display a standard file fallback.
   Future<Uint8List?> getImageThumbnail(
-      MountedContainer container, String fileName, {int targetSize = 180}) async {
+    MountedContainer container,
+    String fileName, {
+    int targetSize = 180,
+  }) async {
     try {
       final Uint8List? bytes = await _channel.invokeMethod<Uint8List>(
         'getImageThumbnail',
@@ -258,21 +262,20 @@ class VaultExplorerApi {
     required List<int> keyBytes,
   }) async {
     try {
-      await _channel.invokeMethod<void>(
-        'generateAndCacheThumbnail',
-        {
-          'filePath': container.uri,
-          'fileName': filePath,
-          'keyBytes': Uint8List.fromList(keyBytes),
-        },
-      );
+      await _channel.invokeMethod<void>('generateAndCacheThumbnail', {
+        'filePath': container.uri,
+        'fileName': filePath,
+        'keyBytes': Uint8List.fromList(keyBytes),
+      });
     } catch (e) {
       debugPrint('Background thumbnail build request failed: $e');
     }
   }
 
   Future<List<String>?> listDirectory(
-      MountedContainer container, String dirPath) async {
+    MountedContainer container,
+    String dirPath,
+  ) async {
     final result = await _channel.invokeMethod<List<Object?>>(
       ChannelMethods.listDirectory,
       {'filePath': container.uri, 'dirPath': dirPath},
@@ -281,7 +284,9 @@ class VaultExplorerApi {
   }
 
   Future<bool> createDirectory(
-      MountedContainer container, String dirPath) async {
+    MountedContainer container,
+    String dirPath,
+  ) async {
     final result = await _channel.invokeMethod<bool>(
       ChannelMethods.createDirectory,
       {'filePath': container.uri, 'dirPath': dirPath},
@@ -290,29 +295,29 @@ class VaultExplorerApi {
   }
 
   Future<bool> renameFile(
-      MountedContainer container, String oldPath, String newPath) async {
+    MountedContainer container,
+    String oldPath,
+    String newPath,
+  ) async {
     final result = await _channel.invokeMethod<bool>(
       ChannelMethods.renameFile,
-      {
-        'filePath': container.uri,
-        'oldPath':  oldPath,
-        'newPath':  newPath,
-      },
+      {'filePath': container.uri, 'oldPath': oldPath, 'newPath': newPath},
     );
     return result ?? false;
   }
 
   Future<bool> writeFileChunk(
-      MountedContainer container, String fileName, int offset, Uint8List data) async {
-    final result = await _channel.invokeMethod<bool>(
-      'writeFileChunk',
-      {
-        'filePath': container.uri,
-        'fileName': fileName,
-        'offset':   offset,
-        'data':     data,
-      },
-    );
+    MountedContainer container,
+    String fileName,
+    int offset,
+    Uint8List data,
+  ) async {
+    final result = await _channel.invokeMethod<bool>('writeFileChunk', {
+      'filePath': container.uri,
+      'fileName': fileName,
+      'offset': offset,
+      'data': data,
+    });
     return result ?? false;
   }
 
@@ -325,12 +330,15 @@ class VaultExplorerApi {
   }
 
   Future<bool> writeBackFile(
-      MountedContainer container, String fileName, String sourcePath) async {
+    MountedContainer container,
+    String fileName,
+    String sourcePath,
+  ) async {
     final result = await _channel.invokeMethod<bool>(
       ChannelMethods.writeBackFile,
       {
-        'filePath':   container.uri,
-        'fileName':   fileName,
+        'filePath': container.uri,
+        'fileName': fileName,
         'sourcePath': sourcePath,
       },
     );
@@ -338,10 +346,13 @@ class VaultExplorerApi {
   }
 
   Future<bool> createEmptyFile(
-      MountedContainer container, String fileName) async {
-    final tmpDir   = await getTemporaryDirectory();
+    MountedContainer container,
+    String fileName,
+  ) async {
+    final tmpDir = await getTemporaryDirectory();
     final tempFile = File(
-        '${tmpDir.path}/cb_empty_${DateTime.now().microsecondsSinceEpoch}');
+      '${tmpDir.path}/cb_empty_${DateTime.now().microsecondsSinceEpoch}',
+    );
     try {
       await tempFile.create(recursive: true);
       return await writeBackFile(container, fileName, tempFile.path);
@@ -359,15 +370,17 @@ class VaultExplorerApi {
   }
 
   Future<int> importFiles(MountedContainer container, String targetPath) async {
-    final result = await _channel.invokeMethod<int>(
-      ChannelMethods.importFile,
-      {'filePath': container.uri, 'targetPath': targetPath},
-    );
+    final result = await _channel.invokeMethod<int>(ChannelMethods.importFile, {
+      'filePath': container.uri,
+      'targetPath': targetPath,
+    });
     return result ?? 0;
   }
 
   Future<int> exportSelectedToFolder(
-      MountedContainer container, List<Map<String, dynamic>> items) async {
+    MountedContainer container,
+    List<Map<String, dynamic>> items,
+  ) async {
     final result = await _channel.invokeMethod<int>(
       ChannelMethods.exportFilesToFolder,
       {'filePath': container.uri, 'items': items},
@@ -376,7 +389,9 @@ class VaultExplorerApi {
   }
 
   Future<int> importFolder(
-      MountedContainer container, String targetPath) async {
+    MountedContainer container,
+    String targetPath,
+  ) async {
     final result = await _channel.invokeMethod<int>(
       ChannelMethods.importFolder,
       {'filePath': container.uri, 'targetPath': targetPath},
@@ -387,7 +402,9 @@ class VaultExplorerApi {
   /// Requests a scaled video thumbnail from the native layer.
   /// Returns null on any error — callers should show a fallback icon.
   Future<Uint8List?> getVideoThumbnail(
-      MountedContainer container, String fileName) async {
+    MountedContainer container,
+    String fileName,
+  ) async {
     try {
       final Uint8List? bytes = await _channel.invokeMethod<Uint8List>(
         ChannelMethods.getVideoThumbnail,

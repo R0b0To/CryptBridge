@@ -30,7 +30,11 @@ class _PatternSetupSheetState extends State<PatternSetupSheet> {
         _showError = true;
       });
       Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted) setState(() { _showError = false; _resetKey++; });
+        if (mounted)
+          setState(() {
+            _showError = false;
+            _resetKey++;
+          });
       });
       return;
     }
@@ -84,8 +88,8 @@ class _PatternSetupSheetState extends State<PatternSetupSheet> {
     final subtitle = _showError
         ? (_error ?? '')
         : (_step == _SetupStep.draw
-            ? 'Connect at least 4 dots'
-            : 'Draw the same pattern again');
+              ? 'Connect at least 4 dots'
+              : 'Draw the same pattern again');
 
     return Padding(
       padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
@@ -97,24 +101,33 @@ class _PatternSetupSheetState extends State<PatternSetupSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               // ── Header ──────────────────────────────────────────────
-              Row(children: [
-                Icon(Icons.pattern_rounded, size: 20,
-                    color: _showError ? cs.error : cs.primary),
-                const SizedBox(width: 10),
-                Text(title,
+              Row(
+                children: [
+                  Icon(
+                    Icons.pattern_rounded,
+                    size: 20,
+                    color: _showError ? cs.error : cs.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    title,
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: _showError ? cs.error : null,
-                    )),
-              ]),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text(subtitle,
-                    style: textTheme.bodySmall?.copyWith(
-                      color: _showError ? cs.error : cs.onSurfaceVariant,
-                      fontWeight: _showError ? FontWeight.bold : null,
-                    )),
+                child: Text(
+                  subtitle,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: _showError ? cs.error : cs.onSurfaceVariant,
+                    fontWeight: _showError ? FontWeight.bold : null,
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
 
@@ -132,9 +145,12 @@ class _PatternSetupSheetState extends State<PatternSetupSheet> {
               // ── Cancel button ───────────────────────────────────────
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text('Cancel',
-                    style:
-                        textTheme.labelLarge?.copyWith(color: cs.onSurfaceVariant)),
+                child: Text(
+                  'Cancel',
+                  style: textTheme.labelLarge?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
               ),
             ],
           ),

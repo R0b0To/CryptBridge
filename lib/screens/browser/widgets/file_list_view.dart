@@ -33,8 +33,18 @@ class FileListView extends StatelessWidget {
 
   // Standard 3-letter month abbreviations to ensure unambiguous identification
   static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   /// Formats the date column dynamically:
@@ -46,7 +56,8 @@ class FileListView extends StatelessWidget {
     final dt = DateTime.fromMillisecondsSinceEpoch(secs * 1000);
     final now = DateTime.now();
 
-    final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    final isToday =
+        dt.year == now.year && dt.month == now.month && dt.day == now.day;
 
     if (isToday) {
       final hr = dt.hour.toString().padLeft(2, '0');
@@ -93,7 +104,10 @@ class FileListView extends StatelessWidget {
                   color: isSelected
                       ? TileSelectionStyle.selectedBackground(cs)
                       : Colors.transparent,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   child: Row(
                     children: [
                       // File Type / Folder Icon
@@ -103,8 +117,9 @@ class FileListView extends StatelessWidget {
                         color: TileSelectionStyle.leadingIconColor(
                           cs,
                           selected: isSelected,
-                          unselectedColor:
-                              isDir ? cs.secondary : colorForFile(entry.name),
+                          unselectedColor: isDir
+                              ? cs.secondary
+                              : colorForFile(entry.name),
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -117,7 +132,9 @@ class FileListView extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textTheme.bodyMedium?.copyWith(
-                            fontWeight: TileSelectionStyle.titleWeight(isSelected),
+                            fontWeight: TileSelectionStyle.titleWeight(
+                              isSelected,
+                            ),
                           ),
                         ),
                       ),
@@ -136,38 +153,37 @@ class FileListView extends StatelessWidget {
                       const SizedBox(width: 16),
 
                       // Size Column
-                      
 
                       // Action Icon or Checkbox
                       if (isSelectionMode) ...[
-                        if(isSelected) ...[    
-                        const SizedBox(width: 60),
-                        TileSelectionIndicator(selected: isSelected),
-                        ]else ...[
+                        if (isSelected) ...[
+                          const SizedBox(width: 60),
+                          TileSelectionIndicator(selected: isSelected),
+                        ] else ...[
                           SizedBox(
-                        width: 80,
-                        child: Text(
-                          sizeStr,
-                          textAlign: TextAlign.right,
-                          style: textTheme.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
+                            width: 80,
+                            child: Text(
+                              sizeStr,
+                              textAlign: TextAlign.right,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),],
-                        
+                        ],
                       ] else if (isDir) ...[
                         const SizedBox(width: 80),
                       ] else ...[
                         SizedBox(
-                        width: 80,
-                        child: Text(
-                          sizeStr,
-                          textAlign: TextAlign.right,
-                          style: textTheme.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
+                          width: 80,
+                          child: Text(
+                            sizeStr,
+                            textAlign: TextAlign.right,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
                           ),
                         ),
-                      ),
                       ],
                     ],
                   ),

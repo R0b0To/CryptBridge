@@ -30,16 +30,16 @@ class ClipboardItem {
   // debugging / future persistence.
 
   Map<String, dynamic> toJson() => {
-        'path': path,
-        'isDir': isDir,
-        'sizeBytes': sizeBytes,
-      };
+    'path': path,
+    'isDir': isDir,
+    'sizeBytes': sizeBytes,
+  };
 
   factory ClipboardItem.fromJson(Map<String, dynamic> j) => ClipboardItem(
-        path: j['path'] as String,
-        isDir: j['isDir'] as bool? ?? false,
-        sizeBytes: j['sizeBytes'] as int? ?? 0,
-      );
+    path: j['path'] as String,
+    isDir: j['isDir'] as bool? ?? false,
+    sizeBytes: j['sizeBytes'] as int? ?? 0,
+  );
 
   ClipboardItem copyWith({String? path, bool? isDir, int? sizeBytes}) =>
       ClipboardItem(

@@ -39,8 +39,8 @@ class ThumbnailCacheService {
 
   // ── Constants ──────────────────────────────────────────────────────────────
   static const inContainerDir = '.thumbcache';
-  static const _gcmNonceSize  = 12;
-  static const _gcmTagSize    = 16;
+  static const _gcmNonceSize = 12;
+  static const _gcmTagSize = 16;
 
   /// Data above this size is encrypted/decrypted in a background isolate via
   /// [compute()] to avoid blocking the UI thread.
@@ -86,11 +86,12 @@ class ThumbnailCacheService {
   static Uint8List? _decryptInline(Uint8List raw, enc.Key key) {
     if (raw.length <= _gcmNonceSize + _gcmTagSize) return null;
     try {
-      final iv         = enc.IV(raw.sublist(0, _gcmNonceSize));
+      final iv = enc.IV(raw.sublist(0, _gcmNonceSize));
       final ciphertext = enc.Encrypted(raw.sublist(_gcmNonceSize));
       return Uint8List.fromList(
-        enc.Encrypter(enc.AES(key, mode: enc.AESMode.gcm))
-            .decryptBytes(ciphertext, iv: iv),
+        enc.Encrypter(
+          enc.AES(key, mode: enc.AESMode.gcm),
+        ).decryptBytes(ciphertext, iv: iv),
       );
     } catch (_) {
       return null;
@@ -98,9 +99,10 @@ class ThumbnailCacheService {
   }
 
   static Uint8List _encryptInline(Uint8List data, enc.Key key) {
-    final iv        = enc.IV.fromSecureRandom(_gcmNonceSize);
-    final encrypted =
-        enc.Encrypter(enc.AES(key, mode: enc.AESMode.gcm)).encryptBytes(data, iv: iv);
+    final iv = enc.IV.fromSecureRandom(_gcmNonceSize);
+    final encrypted = enc.Encrypter(
+      enc.AES(key, mode: enc.AESMode.gcm),
+    ).encryptBytes(data, iv: iv);
     final out = Uint8List(_gcmNonceSize + encrypted.bytes.length);
     out.setRange(0, _gcmNonceSize, iv.bytes);
     out.setRange(_gcmNonceSize, out.length, encrypted.bytes);
@@ -112,12 +114,13 @@ class ThumbnailCacheService {
   static Uint8List? _decryptIsolate(_DecryptArgs args) {
     if (args.raw.length <= _gcmNonceSize + _gcmTagSize) return null;
     try {
-      final key        = enc.Key(args.keyBytes);
-      final iv         = enc.IV(args.raw.sublist(0, _gcmNonceSize));
+      final key = enc.Key(args.keyBytes);
+      final iv = enc.IV(args.raw.sublist(0, _gcmNonceSize));
       final ciphertext = enc.Encrypted(args.raw.sublist(_gcmNonceSize));
       return Uint8List.fromList(
-        enc.Encrypter(enc.AES(key, mode: enc.AESMode.gcm))
-            .decryptBytes(ciphertext, iv: iv),
+        enc.Encrypter(
+          enc.AES(key, mode: enc.AESMode.gcm),
+        ).decryptBytes(ciphertext, iv: iv),
       );
     } catch (_) {
       return null;
@@ -125,11 +128,11 @@ class ThumbnailCacheService {
   }
 
   static Uint8List _encryptIsolate(_EncryptArgs args) {
-    final key       = enc.Key(args.keyBytes);
-    final iv        = enc.IV.fromSecureRandom(_gcmNonceSize);
-    final encrypted =
-        enc.Encrypter(enc.AES(key, mode: enc.AESMode.gcm))
-            .encryptBytes(args.data, iv: iv);
+    final key = enc.Key(args.keyBytes);
+    final iv = enc.IV.fromSecureRandom(_gcmNonceSize);
+    final encrypted = enc.Encrypter(
+      enc.AES(key, mode: enc.AESMode.gcm),
+    ).encryptBytes(args.data, iv: iv);
     final out = Uint8List(_gcmNonceSize + encrypted.bytes.length);
     out.setRange(0, _gcmNonceSize, iv.bytes);
     out.setRange(_gcmNonceSize, out.length, encrypted.bytes);
@@ -142,26 +145,36 @@ class ThumbnailCacheService {
     if (raw.length < _computeThresholdBytes) {
       return _decryptInline(raw, key);
     }
-    return compute(_decryptIsolate, _DecryptArgs(raw: raw, keyBytes: key.bytes));
+    return compute(
+      _decryptIsolate,
+      _DecryptArgs(raw: raw, keyBytes: key.bytes),
+    );
   }
 
   static Future<Uint8List> _encrypt(Uint8List data, enc.Key key) async {
     if (data.length < _computeThresholdBytes) {
       return _encryptInline(data, key);
     }
-    return compute(_encryptIsolate, _EncryptArgs(data: data, keyBytes: key.bytes));
+    return compute(
+      _encryptIsolate,
+      _EncryptArgs(data: data, keyBytes: key.bytes),
+    );
   }
 
   // ── Memory-tier public helpers ─────────────────────────────────────────────
 
   /// Synchronous O(1) lookup into the in-memory tier.
-  static Uint8List? getFromMemory(MountedContainer container, String filePath) =>
-      _memoryCache[_memKey(container, filePath)];
+  static Uint8List? getFromMemory(
+    MountedContainer container,
+    String filePath,
+  ) => _memoryCache[_memKey(container, filePath)];
 
   /// Writes directly to the in-memory tier.
   static void putInMemory(
-      MountedContainer container, String filePath, Uint8List data) =>
-      _memoryCache[_memKey(container, filePath)] = data;
+    MountedContainer container,
+    String filePath,
+    Uint8List data,
+  ) => _memoryCache[_memKey(container, filePath)] = data;
 
   // ── Public: read ──────────────────────────────────────────────────────────
 
@@ -179,7 +192,7 @@ class ThumbnailCacheService {
     // Tier 2: disk / in-container.
     try {
       if (mode == ThumbnailCacheMode.appCache) {
-        final dir  = await _thumbDir(container);
+        final dir = await _thumbDir(container);
         final file = File('$dir/${_encodeKey(filePath)}');
 
         final Uint8List raw;
@@ -193,7 +206,7 @@ class ThumbnailCacheService {
 
         if (raw.length <= _gcmNonceSize + _gcmTagSize) return null;
 
-        final key       = await getOrFetchKey();
+        final key = await getOrFetchKey();
         final decrypted = await _decrypt(raw, key);
         if (decrypted == null || decrypted.isEmpty) return null;
 
@@ -204,8 +217,12 @@ class ThumbnailCacheService {
         final cachePath = '$inContainerDir/${_encodeKey(filePath)}';
         final size = await vaultExplorerApi.getFileSize(container, cachePath);
         if (size <= 0) return null;
-        final bytes =
-            await vaultExplorerApi.readFileChunk(container, cachePath, 0, size);
+        final bytes = await vaultExplorerApi.readFileChunk(
+          container,
+          cachePath,
+          0,
+          size,
+        );
         if (bytes != null && bytes.isNotEmpty) {
           putInMemory(container, filePath, bytes);
         }
@@ -232,11 +249,11 @@ class ThumbnailCacheService {
     try {
       if (mode == ThumbnailCacheMode.appCache) {
         final dirPath = await _thumbDir(container);
-        final dir     = Directory(dirPath);
+        final dir = Directory(dirPath);
         if (!await dir.exists()) await dir.create(recursive: true);
 
-        final file      = File('$dirPath/${_encodeKey(filePath)}');
-        final key       = await getOrFetchKey();
+        final file = File('$dirPath/${_encodeKey(filePath)}');
+        final key = await getOrFetchKey();
         final encrypted = await _encrypt(data, key);
 
         // Atomic write: temp file → rename.
@@ -245,17 +262,23 @@ class ThumbnailCacheService {
         await tmp.rename(file.path);
       } else {
         final cachePath = '$inContainerDir/${_encodeKey(filePath)}';
-        final tmpPath   = '$cachePath.tmp';
+        final tmpPath = '$cachePath.tmp';
         await vaultExplorerApi.createDirectory(container, inContainerDir);
         await vaultExplorerApi.deleteFile(container, tmpPath);
-        final ok =
-            await vaultExplorerApi.writeFileChunk(container, tmpPath, 0, data);
+        final ok = await vaultExplorerApi.writeFileChunk(
+          container,
+          tmpPath,
+          0,
+          data,
+        );
         if (ok) {
           await vaultExplorerApi.deleteFile(container, cachePath);
           await vaultExplorerApi.renameFile(container, tmpPath, cachePath);
         } else {
           await vaultExplorerApi.deleteFile(container, tmpPath);
-          debugPrint('ThumbnailCacheService.put: inContainer write failed for $filePath');
+          debugPrint(
+            'ThumbnailCacheService.put: inContainer write failed for $filePath',
+          );
         }
       }
     } catch (e) {
@@ -274,7 +297,9 @@ class ThumbnailCacheService {
         if (e is File) total += await e.length();
       }
       return total;
-    } catch (_) { return 0; }
+    } catch (_) {
+      return 0;
+    }
   }
 
   static Future<int> totalAppCacheBytes() async {
@@ -287,7 +312,9 @@ class ThumbnailCacheService {
         if (e is File) total += await e.length();
       }
       return total;
-    } catch (_) { return 0; }
+    } catch (_) {
+      return 0;
+    }
   }
 
   static Future<void> clearAppCacheFor(MountedContainer container) async {
@@ -312,7 +339,9 @@ class ThumbnailCacheService {
   ///
   /// Signature changed from `Set<int> activeVolIds` to `Set<String> activeContainerUris`
   /// because disk directories are now keyed by encoded URI, not volId.
-  static Future<void> pruneStaleAppCache(Set<String> activeContainerUris) async {
+  static Future<void> pruneStaleAppCache(
+    Set<String> activeContainerUris,
+  ) async {
     try {
       _appCacheRoot ??= (await getApplicationCacheDirectory()).path;
       final root = Directory('$_appCacheRoot/thumbs');

@@ -17,9 +17,9 @@ import 'vaultexplorer_api.dart';
 class PasswordHasher {
   const PasswordHasher._();
 
-  static const int _saltBytes       = 16;
-  static const int _iterations      = 200000;
-  static const int _outputBytes     = 64;
+  static const int _saltBytes = 16;
+  static const int _iterations = 200000;
+  static const int _outputBytes = 64;
 
   /// Derives a PBKDF2-SHA512 hash from [plaintext].
   ///
@@ -29,7 +29,8 @@ class PasswordHasher {
   ///
   /// Throws [StateError] if the underlying PBKDF2 call fails.
   static Future<({String hash, String salt})> deriveHash(
-      String plaintext) async {
+    String plaintext,
+  ) async {
     final saltBytes = Uint8List(_saltBytes);
     final rng = Random.secure();
     for (int i = 0; i < _saltBytes; i++) {

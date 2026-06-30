@@ -48,43 +48,45 @@ class ContainerCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: cs.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.folder_zip_outlined,
+                      size: 20,
+                      color: cs.onPrimaryContainer,
+                    ),
                   ),
-                  child: Icon(
-                    Icons.folder_zip_outlined,
-                    size: 20,
-                    color: cs.onPrimaryContainer,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          container.displayName,
+                          style: textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          hasSpace
+                              ? '${formatBytes(container.freeSpace)} free'
+                                    ' of ${formatBytes(container.totalSpace)}'
+                              : 'Vol ${container.volId} · mounted',
+                          style: textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        container.displayName,
-                        style: textTheme.titleMedium,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        hasSpace
-                            ? '${formatBytes(container.freeSpace)} free'
-                                ' of ${formatBytes(container.totalSpace)}'
-                            : 'Vol ${container.volId} · mounted',
-                        style: textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                _LockButton(container: container, onLocked: onLocked),
-              ]),
+                  _LockButton(container: container, onLocked: onLocked),
+                ],
+              ),
               if (hasSpace) ...[
                 const SizedBox(height: 12),
                 ClipRRect(
@@ -94,31 +96,34 @@ class ContainerCard extends StatelessWidget {
                     minHeight: 4,
                     backgroundColor: cs.surfaceContainerHighest,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                        _barColor(usedFraction, cs)),
+                      _barColor(usedFraction, cs),
+                    ),
                   ),
                 ),
               ],
               const SizedBox(height: 14),
-              Row(children: [
-                Icon(Icons.arrow_forward, size: 14, color: cs.primary),
-                const SizedBox(width: 6),
-                Text(
-                  'Browse',
-                  style: textTheme.labelLarge?.copyWith(
-                    color: cs.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                if (onLongPress != null)
+              Row(
+                children: [
+                  Icon(Icons.arrow_forward, size: 14, color: cs.primary),
+                  const SizedBox(width: 6),
                   Text(
-                    'Hold to configure',
-                    style: textTheme.bodySmall?.copyWith(
-                      fontSize: 10,
-                      color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                    'Browse',
+                    style: textTheme.labelLarge?.copyWith(
+                      color: cs.primary,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-              ]),
+                  const Spacer(),
+                  if (onLongPress != null)
+                    Text(
+                      'Hold to configure',
+                      style: textTheme.bodySmall?.copyWith(
+                        fontSize: 10,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
         ),
@@ -147,7 +152,9 @@ class _LockButtonState extends State<_LockButton> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('An operation is in progress. Please wait before locking.'),
+            content: Text(
+              'An operation is in progress. Please wait before locking.',
+            ),
           ),
         );
       }
@@ -180,10 +187,7 @@ class _LockButtonState extends State<_LockButton> {
           ? SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: cs.error,
-              ),
+              child: CircularProgressIndicator(strokeWidth: 2, color: cs.error),
             )
           : Icon(Icons.lock_outline, size: 20, color: cs.error),
     );
@@ -220,46 +224,50 @@ class SavedContainerCard extends StatelessWidget {
         onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.folder_zip_outlined,
+                  size: 20,
+                  color: cs.onSurfaceVariant,
+                ),
               ),
-              child: Icon(
-                Icons.folder_zip_outlined,
-                size: 20,
-                color: cs.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Row(children: [
-                    Icon(Icons.lock, size: 12, color: cs.onSurfaceVariant),
-                    const SizedBox(width: 4),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      'Locked',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
+                      name,
+                      style: textTheme.titleMedium,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ]),
-                ],
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(Icons.lock, size: 12, color: cs.onSurfaceVariant),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Locked',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Icon(Icons.lock_open_outlined, color: cs.primary),
-          ]),
+              Icon(Icons.lock_open_outlined, color: cs.primary),
+            ],
+          ),
         ),
       ),
     );

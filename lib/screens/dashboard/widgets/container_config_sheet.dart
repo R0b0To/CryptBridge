@@ -36,15 +36,15 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
   late TextEditingController _passwordCtrl;
   late ContainerUnlockMethod _unlockMethod;
   late bool _showPassword;
-  late int  _autoCloseMins;
+  late int _autoCloseMins;
   late bool _documentProvider;
   ThumbnailCacheMode? _thumbnailCacheMode;
-  String? _patternHash;   // stored pattern hash (from Keystore or newly set)
+  String? _patternHash; // stored pattern hash (from Keystore or newly set)
   bool _biometricAvailable = false;
   late bool _settingsLocked;
   bool _changePassword = false;
 
-  bool _saving          = false;
+  bool _saving = false;
   bool _loadingPassword = true;
 
   static const _autoCloseOptions = [0, 1, 2, 5, 10, 15, 30, 60];
@@ -52,16 +52,18 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
   @override
   void initState() {
     super.initState();
-    final rec         = widget.existingRecord;
-    _labelCtrl        = TextEditingController(
-        text: rec?.label.isNotEmpty == true ? rec!.label : widget.currentLabel);
-    _passwordCtrl     = TextEditingController();
-    _unlockMethod     = rec?.unlockMethod ?? ContainerUnlockMethod.password;
-    _showPassword     = false;
-    _autoCloseMins    = rec?.autoCloseMins ?? 0;
+    final rec = widget.existingRecord;
+    _labelCtrl = TextEditingController(
+      text: rec?.label.isNotEmpty == true ? rec!.label : widget.currentLabel,
+    );
+    _passwordCtrl = TextEditingController();
+    _unlockMethod = rec?.unlockMethod ?? ContainerUnlockMethod.password;
+    _showPassword = false;
+    _autoCloseMins = rec?.autoCloseMins ?? 0;
     _documentProvider = rec?.documentProvider ?? false;
     _thumbnailCacheMode = rec?.thumbnailCacheMode;
-    _settingsLocked   = rec != null && rec.unlockMethod != ContainerUnlockMethod.password;
+    _settingsLocked =
+        rec != null && rec.unlockMethod != ContainerUnlockMethod.password;
     _initAsync();
   }
 
@@ -71,13 +73,15 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
     // 0. Check biometric capability
     try {
       final localAuth = LocalAuthentication();
-      _biometricAvailable = await localAuth.canCheckBiometrics &&
+      _biometricAvailable =
+          await localAuth.canCheckBiometrics &&
           await localAuth.isDeviceSupported();
     } catch (_) {}
 
     // 1. Resolve thumbnail cache mode from app settings
     try {
-      final settings = widget.appSettings ?? await AppSettingsService.loadSettings();
+      final settings =
+          widget.appSettings ?? await AppSettingsService.loadSettings();
       if (mounted) {
         setState(() {
           _thumbnailCacheMode ??= settings.defaultThumbnailCacheMode;
@@ -93,7 +97,9 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
 
     // 2. Load stored pattern hash if applicable
     if (_unlockMethod == ContainerUnlockMethod.pattern) {
-      _patternHash = await ContainerRepository.instance.getPatternHash(widget.uri);
+      _patternHash = await ContainerRepository.instance.getPatternHash(
+        widget.uri,
+      );
     }
 
     if (mounted) setState(() => _loadingPassword = false);
@@ -113,7 +119,8 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
         ? widget.currentLabel
         : _labelCtrl.text.trim();
 
-    final wasNone = widget.existingRecord == null ||
+    final wasNone =
+        widget.existingRecord == null ||
         widget.existingRecord!.unlockMethod == ContainerUnlockMethod.password;
     final needsPassword = _unlockMethod != ContainerUnlockMethod.password;
     final shouldSavePassword = needsPassword && (wasNone || _changePassword);
@@ -170,9 +177,8 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
       final hash = await showModalBottomSheet<String>(
         context: context,
         isScrollControlled: true,
-        builder: (context) => _PatternVerifySheet(
-          storedHash: _patternHash ?? '',
-        ),
+        builder: (context) =>
+            _PatternVerifySheet(storedHash: _patternHash ?? ''),
       );
       if (hash != null && mounted) {
         setState(() => _settingsLocked = false);
@@ -180,9 +186,7 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
     } else if (record.unlockMethod == ContainerUnlockMethod.rememberPassword) {
       final ok = await showDialog<bool>(
         context: context,
-        builder: (context) => _PasswordVerifyDialog(
-          uri: widget.uri,
-        ),
+        builder: (context) => _PasswordVerifyDialog(uri: widget.uri),
       );
       if (ok == true && mounted) {
         setState(() => _settingsLocked = false);
@@ -192,9 +196,9 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final mq        = MediaQuery.of(context);
+    final mq = MediaQuery.of(context);
 
     return Padding(
       padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
@@ -208,325 +212,384 @@ class _ContainerConfigSheetState extends State<ContainerConfigSheet> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                Row(children: [
-                  Icon(Icons.settings_rounded, size: 20, color: cs.primary),
-                  const SizedBox(width: 10),
-                  Text('Container Settings',
-                      style: textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600)),
-                ]),
-                const SizedBox(height: 20),
-
-                // ── Label ────────────────────────────────────────────────────
-                TextField(
-                  controller: _labelCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Display Name',
-                    prefixIcon: Icon(Icons.label_outline_rounded, size: 18),
-                    hintText: 'My Vault',
+                  Row(
+                    children: [
+                      Icon(Icons.settings_rounded, size: 20, color: cs.primary),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Container Settings',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 20),
 
-                // ── Unlock Method ─────────────────────────────────────────
-                _SectionHeader('UNLOCK METHOD', cs),
-                const SizedBox(height: 10),
-                if (_settingsLocked) ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: cs.outlineVariant),
+                  // ── Label ────────────────────────────────────────────────────
+                  TextField(
+                    controller: _labelCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Display Name',
+                      prefixIcon: Icon(Icons.label_outline_rounded, size: 18),
+                      hintText: 'My Vault',
                     ),
-                    child: Column(
-                      children: [
-                        Icon(Icons.lock_outline_rounded, size: 36, color: cs.primary),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Security settings are locked',
-                          style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Authenticate using the current unlock method to modify.',
-                          style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        FilledButton.icon(
-                          onPressed: _authenticateSettings,
-                          icon: Icon(
-                            widget.existingRecord?.unlockMethod.icon ?? Icons.lock_open_rounded,
-                            size: 18,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ── Unlock Method ─────────────────────────────────────────
+                  _SectionHeader('UNLOCK METHOD', cs),
+                  const SizedBox(height: 10),
+                  if (_settingsLocked) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: cs.outlineVariant),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.lock_outline_rounded,
+                            size: 36,
+                            color: cs.primary,
                           ),
-                          label: const Text('Unlock Settings'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ] else ...[
-                  DropdownButtonFormField<ContainerUnlockMethod>(
-                    value: _unlockMethod,
-                    decoration: InputDecoration(
-                      labelText: 'How to unlock',
-                      prefixIcon: Icon(_unlockMethod.icon, size: 18),
-                    ),
-                    items: ContainerUnlockMethod.values
-                        .where((m) =>
-                            m != ContainerUnlockMethod.biometrics ||
-                            _biometricAvailable ||
-                            _unlockMethod == m)
-                        .map((m) {
-                          final isUnavailableBio = m == ContainerUnlockMethod.biometrics && !_biometricAvailable;
-                          return DropdownMenuItem(
-                            value: m,
-                            child: Row(children: [
-                              Icon(m.icon, size: 16,
-                                  color: cs.onSurfaceVariant),
-                              const SizedBox(width: 10),
-                              Text(isUnavailableBio
-                                  ? '${m.label} (Unavailable)'
-                                  : m.label),
-                            ]),
-                          );
-                        })
-                        .toList(),
-                    selectedItemBuilder: (BuildContext context) {
-                      return ContainerUnlockMethod.values
-                          .where((m) =>
-                              m != ContainerUnlockMethod.biometrics ||
-                              _biometricAvailable ||
-                              _unlockMethod == m)
-                          .map((m) {
-                            final isUnavailableBio = m == ContainerUnlockMethod.biometrics && !_biometricAvailable;
-                            return Text(isUnavailableBio ? '${m.label} (Unavailable)' : m.label);
-                          })
-                          .toList();
-                    },
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() {
-                        _unlockMethod = v;
-                        if (v == ContainerUnlockMethod.password) {
-                          _passwordCtrl.clear();
-                        }
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      _unlockMethod.subtitle,
-                      style: textTheme.bodySmall
-                          ?.copyWith(color: cs.onSurfaceVariant, height: 1.4),
-                    ),
-                  ),
-
-                  // ── Option to update password if already configured ──────
-                  if (widget.existingRecord != null &&
-                      widget.existingRecord!.unlockMethod != ContainerUnlockMethod.password &&
-                      _unlockMethod != ContainerUnlockMethod.password) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: Checkbox(
-                            value: _changePassword,
-                            onChanged: (v) => setState(() {
-                              _changePassword = v ?? false;
-                              if (!v!) _passwordCtrl.clear();
-                            }),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Security settings are locked',
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () => setState(() {
-                            _changePassword = !_changePassword;
-                            if (!_changePassword) _passwordCtrl.clear();
-                          }),
-                          child: Text(
-                            'Update saved password',
-                            style: textTheme.bodyMedium,
+                          const SizedBox(height: 6),
+                          Text(
+                            'Authenticate using the current unlock method to modify.',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 16),
+                          FilledButton.icon(
+                            onPressed: _authenticateSettings,
+                            icon: Icon(
+                              widget.existingRecord?.unlockMethod.icon ??
+                                  Icons.lock_open_rounded,
+                              size: 18,
+                            ),
+                            label: const Text('Unlock Settings'),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-
-                  // ── Password field (shown for new setups or if change requested) ──
-                  if (_unlockMethod != ContainerUnlockMethod.password &&
-                      (widget.existingRecord == null ||
-                       widget.existingRecord!.unlockMethod == ContainerUnlockMethod.password ||
-                       _changePassword)) ...[
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _passwordCtrl,
-                      obscureText: !_showPassword,
-                      autofillHints: const [AutofillHints.password],
+                  ] else ...[
+                    DropdownButtonFormField<ContainerUnlockMethod>(
+                      value: _unlockMethod,
                       decoration: InputDecoration(
-                        labelText: 'Container password',
-                        prefixIcon: const Icon(Icons.lock_rounded, size: 18),
-                        suffixIcon: IconButton(
-                          icon: Icon(
+                        labelText: 'How to unlock',
+                        prefixIcon: Icon(_unlockMethod.icon, size: 18),
+                      ),
+                      items: ContainerUnlockMethod.values
+                          .where(
+                            (m) =>
+                                m != ContainerUnlockMethod.biometrics ||
+                                _biometricAvailable ||
+                                _unlockMethod == m,
+                          )
+                          .map((m) {
+                            final isUnavailableBio =
+                                m == ContainerUnlockMethod.biometrics &&
+                                !_biometricAvailable;
+                            return DropdownMenuItem(
+                              value: m,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    m.icon,
+                                    size: 16,
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    isUnavailableBio
+                                        ? '${m.label} (Unavailable)'
+                                        : m.label,
+                                  ),
+                                ],
+                              ),
+                            );
+                          })
+                          .toList(),
+                      selectedItemBuilder: (BuildContext context) {
+                        return ContainerUnlockMethod.values
+                            .where(
+                              (m) =>
+                                  m != ContainerUnlockMethod.biometrics ||
+                                  _biometricAvailable ||
+                                  _unlockMethod == m,
+                            )
+                            .map((m) {
+                              final isUnavailableBio =
+                                  m == ContainerUnlockMethod.biometrics &&
+                                  !_biometricAvailable;
+                              return Text(
+                                isUnavailableBio
+                                    ? '${m.label} (Unavailable)'
+                                    : m.label,
+                              );
+                            })
+                            .toList();
+                      },
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() {
+                          _unlockMethod = v;
+                          if (v == ContainerUnlockMethod.password) {
+                            _passwordCtrl.clear();
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        _unlockMethod.subtitle,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+
+                    // ── Option to update password if already configured ──────
+                    if (widget.existingRecord != null &&
+                        widget.existingRecord!.unlockMethod !=
+                            ContainerUnlockMethod.password &&
+                        _unlockMethod != ContainerUnlockMethod.password) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Checkbox(
+                              value: _changePassword,
+                              onChanged: (v) => setState(() {
+                                _changePassword = v ?? false;
+                                if (!v!) _passwordCtrl.clear();
+                              }),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => setState(() {
+                              _changePassword = !_changePassword;
+                              if (!_changePassword) _passwordCtrl.clear();
+                            }),
+                            child: Text(
+                              'Update saved password',
+                              style: textTheme.bodyMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    // ── Password field (shown for new setups or if change requested) ──
+                    if (_unlockMethod != ContainerUnlockMethod.password &&
+                        (widget.existingRecord == null ||
+                            widget.existingRecord!.unlockMethod ==
+                                ContainerUnlockMethod.password ||
+                            _changePassword)) ...[
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _passwordCtrl,
+                        obscureText: !_showPassword,
+                        autofillHints: const [AutofillHints.password],
+                        decoration: InputDecoration(
+                          labelText: 'Container password',
+                          prefixIcon: const Icon(Icons.lock_rounded, size: 18),
+                          suffixIcon: IconButton(
+                            icon: Icon(
                               _showPassword
                                   ? Icons.visibility_off_rounded
                                   : Icons.visibility_rounded,
-                              size: 18),
-                          onPressed: () =>
-                              setState(() => _showPassword = !_showPassword),
-                        ),
-                        hintText: 'Enter container password',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(children: [
-                      Icon(Icons.security_rounded,
-                          size: 14, color: cs.onSurfaceVariant),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Password is encrypted with a device-bound key in Android '
-                          'Keystore. It is protected even if the APK is extracted, '
-                          'but not if the device is rooted and the Keystore is bypassed.',
-                          style: textTheme.bodySmall
-                              ?.copyWith(color: cs.onSurfaceVariant),
+                              size: 18,
+                            ),
+                            onPressed: () =>
+                                setState(() => _showPassword = !_showPassword),
+                          ),
+                          hintText: 'Enter container password',
                         ),
                       ),
-                    ]),
-                  ],
-
-                  // ── Pattern setup button ───────────────────────────────────
-                  if (_unlockMethod == ContainerUnlockMethod.pattern) ...[
-                    const SizedBox(height: 14),
-                    OutlinedButton.icon(
-                      onPressed: _setupPattern,
-                      icon: Icon(
-                        _patternHash != null
-                            ? Icons.check_circle_rounded
-                            : Icons.pattern_rounded,
-                        size: 18,
-                        color: _patternHash != null ? cs.primary : null,
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.security_rounded,
+                            size: 14,
+                            color: cs.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Password is encrypted with a device-bound key in Android '
+                              'Keystore. It is protected even if the APK is extracted, '
+                              'but not if the device is rooted and the Keystore is bypassed.',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      label: Text(_patternHash != null
-                          ? 'Change Pattern'
-                          : 'Set Pattern'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 44),
+                    ],
+
+                    // ── Pattern setup button ───────────────────────────────────
+                    if (_unlockMethod == ContainerUnlockMethod.pattern) ...[
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
+                        onPressed: _setupPattern,
+                        icon: Icon(
+                          _patternHash != null
+                              ? Icons.check_circle_rounded
+                              : Icons.pattern_rounded,
+                          size: 18,
+                          color: _patternHash != null ? cs.primary : null,
+                        ),
+                        label: Text(
+                          _patternHash != null
+                              ? 'Change Pattern'
+                              : 'Set Pattern',
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 44),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                // ── Auto-lock ─────────────────────────────────────────────────
-                _SectionHeader('AUTO-LOCK', cs),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<int>(
-                  value: _autoCloseMins,
-                  decoration: const InputDecoration(
-                    labelText: 'Lock container after',
-                    prefixIcon: Icon(Icons.timer_rounded, size: 18),
-                  ),
-                  items: _autoCloseOptions.map((mins) {
-                    final label = mins == 0
-                        ? 'Never'
-                        : mins == 1
-                            ? '1 minute'
-                            : '$mins minutes';
-                    return DropdownMenuItem(value: mins, child: Text(label));
-                  }).toList(),
-                  onChanged: (v) {
-                    if (v != null) setState(() => _autoCloseMins = v);
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // ── Document Provider ─────────────────────────────────────────
-                _SectionHeader('ANDROID INTEGRATION', cs),
-                const SizedBox(height: 10),
-                _ToggleRow(
-                  icon: Icons.folder_shared_rounded,
-                  title: 'Expose as Document Provider',
-                  subtitle:
-                      'Makes this container visible in Android\'s system file '
-                      'picker when unlocked',
-                  value: _documentProvider,
-                  cs: cs,
-                  onChanged: (v) => setState(() => _documentProvider = v),
-                ),
-                const SizedBox(height: 16),
-
-                // ── Thumbnail Caching ─────────────────────────────────────────
-                _SectionHeader('THUMBNAIL CACHING', cs),
-                const SizedBox(height: 10),
-                if (_loadingPassword)
-                  const Center(
-                      child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2)))
-                else
-                  DropdownButtonFormField<ThumbnailCacheMode?>(
-                    value: _thumbnailCacheMode,
+                  // ── Auto-lock ─────────────────────────────────────────────────
+                  _SectionHeader('AUTO-LOCK', cs),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<int>(
+                    value: _autoCloseMins,
                     decoration: const InputDecoration(
-                      labelText: 'Thumbnail Cache Mode',
-                      prefixIcon: Icon(Icons.cached_rounded, size: 18),
+                      labelText: 'Lock container after',
+                      prefixIcon: Icon(Icons.timer_rounded, size: 18),
                     ),
-                    items: ThumbnailCacheMode.values
-                        .map((mode) => DropdownMenuItem<ThumbnailCacheMode?>(
+                    items: _autoCloseOptions.map((mins) {
+                      final label = mins == 0
+                          ? 'Never'
+                          : mins == 1
+                          ? '1 minute'
+                          : '$mins minutes';
+                      return DropdownMenuItem(value: mins, child: Text(label));
+                    }).toList(),
+                    onChanged: (v) {
+                      if (v != null) setState(() => _autoCloseMins = v);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ── Document Provider ─────────────────────────────────────────
+                  _SectionHeader('ANDROID INTEGRATION', cs),
+                  const SizedBox(height: 10),
+                  _ToggleRow(
+                    icon: Icons.folder_shared_rounded,
+                    title: 'Expose as Document Provider',
+                    subtitle:
+                        'Makes this container visible in Android\'s system file '
+                        'picker when unlocked',
+                    value: _documentProvider,
+                    cs: cs,
+                    onChanged: (v) => setState(() => _documentProvider = v),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ── Thumbnail Caching ─────────────────────────────────────────
+                  _SectionHeader('THUMBNAIL CACHING', cs),
+                  const SizedBox(height: 10),
+                  if (_loadingPassword)
+                    const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else
+                    DropdownButtonFormField<ThumbnailCacheMode?>(
+                      value: _thumbnailCacheMode,
+                      decoration: const InputDecoration(
+                        labelText: 'Thumbnail Cache Mode',
+                        prefixIcon: Icon(Icons.cached_rounded, size: 18),
+                      ),
+                      items: ThumbnailCacheMode.values
+                          .map(
+                            (mode) => DropdownMenuItem<ThumbnailCacheMode?>(
                               value: mode,
                               child: Text(mode.label),
-                            ))
-                        .toList(),
-                    onChanged: (v) => setState(() => _thumbnailCacheMode = v),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _thumbnailCacheMode = v),
+                    ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      _thumbnailCacheMode?.description ??
+                          'Uses the default setting configured globally in App Settings.',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                    ),
                   ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    _thumbnailCacheMode?.description ??
-                        'Uses the default setting configured globally in App Settings.',
-                    style: textTheme.bodySmall
-                        ?.copyWith(color: cs.onSurfaceVariant, height: 1.4),
-                  ),
-                ),
-                const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-                if (widget.onForget != null) ...[
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      widget.onForget!();
-                    },
-                    icon: Icon(Icons.delete_outline_rounded,
-                        size: 18, color: cs.error),
-                    label: Text('Remove from dashboard',
-                        style: textTheme.labelLarge?.copyWith(color: cs.error)),
-                  ),
-                  const SizedBox(height: 12),
-                ],
+                  if (widget.onForget != null) ...[
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        widget.onForget!();
+                      },
+                      icon: Icon(
+                        Icons.delete_outline_rounded,
+                        size: 18,
+                        color: cs.error,
+                      ),
+                      label: Text(
+                        'Remove from dashboard',
+                        style: textTheme.labelLarge?.copyWith(color: cs.error),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
-                FilledButton(
-                  onPressed: _saving ? null : _save,
-                  style: FilledButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 48)),
-                  child: _saving
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
+                  FilledButton(
+                    onPressed: _saving ? null : _save,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                    child: _saving
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
                               strokeWidth: 2.5,
-                              valueColor:
-                                  AlwaysStoppedAnimation(cs.onPrimary)))
-                      : const Text('Save'),
-                ),
-              ],
+                              valueColor: AlwaysStoppedAnimation(cs.onPrimary),
+                            ),
+                          )
+                        : const Text('Save'),
+                  ),
+                ],
+              ),
             ),
-          ),
           ),
         ),
       ),
@@ -546,12 +609,14 @@ class _SectionHeader extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Text(label.toUpperCase(),
-          style: textTheme.labelSmall?.copyWith(
-            color: cs.primary,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-          )),
+      child: Text(
+        label.toUpperCase(),
+        style: textTheme.labelSmall?.copyWith(
+          color: cs.primary,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.2,
+        ),
+      ),
     );
   }
 }
@@ -584,13 +649,19 @@ class _ToggleRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title,
-                  style: textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w500)),
+              Text(
+                title,
+                style: textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text(subtitle,
-                  style: textTheme.bodySmall
-                      ?.copyWith(color: cs.onSurfaceVariant)),
+              Text(
+                subtitle,
+                style: textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
         ),
@@ -604,7 +675,8 @@ class _ToggleRow extends StatelessWidget {
 
 class _PatternVerifySheet extends StatefulWidget {
   final String storedHash;
-  const _PatternVerifySheet({Key? key, required this.storedHash}) : super(key: key);
+  const _PatternVerifySheet({Key? key, required this.storedHash})
+    : super(key: key);
 
   @override
   State<_PatternVerifySheet> createState() => _PatternVerifySheetState();
@@ -639,7 +711,9 @@ class _PatternVerifySheetState extends State<_PatternVerifySheet> {
     final textTheme = Theme.of(context).textTheme;
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SafeArea(
         top: false,
         child: Padding(
@@ -647,17 +721,23 @@ class _PatternVerifySheetState extends State<_PatternVerifySheet> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(children: [
-                Icon(Icons.pattern_rounded, size: 20, color: _showError ? cs.error : cs.primary),
-                const SizedBox(width: 10),
-                Text(
-                  _showError ? 'Incorrect pattern' : 'Verify Pattern',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: _showError ? cs.error : null,
+              Row(
+                children: [
+                  Icon(
+                    Icons.pattern_rounded,
+                    size: 20,
+                    color: _showError ? cs.error : cs.primary,
                   ),
-                ),
-              ]),
+                  const SizedBox(width: 10),
+                  Text(
+                    _showError ? 'Incorrect pattern' : 'Verify Pattern',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: _showError ? cs.error : null,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 24),
               PatternLockView(
                 key: ValueKey(_resetKey),
@@ -731,7 +811,9 @@ class _PasswordVerifyDialogState extends State<_PasswordVerifyDialog> {
               decoration: InputDecoration(
                 labelText: 'Current password',
                 suffixIcon: IconButton(
-                  icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
+                  icon: Icon(
+                    _obscure ? Icons.visibility : Icons.visibility_off,
+                  ),
                   onPressed: () => setState(() => _obscure = !_obscure),
                 ),
                 errorText: _error,
@@ -752,7 +834,8 @@ class _PasswordVerifyDialogState extends State<_PasswordVerifyDialog> {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Text('Verify'),
         ),
       ],

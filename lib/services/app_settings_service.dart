@@ -5,13 +5,12 @@ import 'package:path_provider/path_provider.dart';
 import '../models/thumbnail_cache_mode.dart';
 import 'container_repository.dart';
 
-export 'container_repository.dart' show ContainerRepository, ContainerRecord, ContainerUnlockMethod;
+export 'container_repository.dart'
+    show ContainerRepository, ContainerRecord, ContainerUnlockMethod;
 
 // ── Secure storage instance ───────────────────────────────────────────────────
 
-const _secure = FlutterSecureStorage(
-  aOptions: AndroidOptions(),
-);
+const _secure = FlutterSecureStorage(aOptions: AndroidOptions());
 
 // Keystore keys for master password material.
 const _kMasterHash = 'vc_master_hash_v2';
@@ -45,9 +44,9 @@ class AppSettings {
     Map<String, String>? extensionPreferences,
     String? masterPasswordHash,
     String? masterPasswordSalt,
-  })  : extensionPreferences = extensionPreferences ?? {},
-        _masterPasswordHash = masterPasswordHash,
-        _masterPasswordSalt = masterPasswordSalt;
+  }) : extensionPreferences = extensionPreferences ?? {},
+       _masterPasswordHash = masterPasswordHash,
+       _masterPasswordSalt = masterPasswordSalt;
 
   // Read-only accessors — callers must not store these; use Keystore directly.
   String? get masterPasswordHash => _masterPasswordHash;
@@ -72,33 +71,39 @@ class AppSettings {
   /// Serialises only non-secret preferences to JSON.
   /// Hash material is intentionally excluded.
   Map<String, dynamic> toJson() => {
-        'useMasterPassword': useMasterPassword,
-        'masterPasswordIsFingerprint': masterPasswordIsFingerprint,
-        'defaultDocumentProvider': defaultDocumentProvider,
-        'videoAutoPlay': videoAutoPlay,
-        'blockScreenshots': blockScreenshots,
-        'defaultThumbnailCacheMode': defaultThumbnailCacheMode.toJson(),
-        'extensionPreferences': extensionPreferences,
-      };
+    'useMasterPassword': useMasterPassword,
+    'masterPasswordIsFingerprint': masterPasswordIsFingerprint,
+    'defaultDocumentProvider': defaultDocumentProvider,
+    'videoAutoPlay': videoAutoPlay,
+    'blockScreenshots': blockScreenshots,
+    'defaultThumbnailCacheMode': defaultThumbnailCacheMode.toJson(),
+    'extensionPreferences': extensionPreferences,
+  };
 
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
-      useMasterPassword: j['useMasterPassword'] as bool? ?? false,
-      masterPasswordIsFingerprint:
-          j['masterPasswordIsFingerprint'] as bool? ?? false,
-      defaultDocumentProvider: j['defaultDocumentProvider'] as bool? ??
-          j['mountAsDocumentProvider'] as bool? ?? false,
-      videoAutoPlay: j['videoAutoPlay'] as bool? ?? true,
-      blockScreenshots: j['blockScreenshots'] as bool? ?? false,
+    useMasterPassword: j['useMasterPassword'] as bool? ?? false,
+    masterPasswordIsFingerprint:
+        j['masterPasswordIsFingerprint'] as bool? ?? false,
+    defaultDocumentProvider:
+        j['defaultDocumentProvider'] as bool? ??
+        j['mountAsDocumentProvider'] as bool? ??
+        false,
+    videoAutoPlay: j['videoAutoPlay'] as bool? ?? true,
+    blockScreenshots: j['blockScreenshots'] as bool? ?? false,
 
-      // Resolve nullable parsed mode and default to appCache if null
-      defaultThumbnailCacheMode: ThumbnailCacheMode.fromJson(
-          j['defaultThumbnailCacheMode'] as String?) ?? ThumbnailCacheMode.appCache,
-      extensionPreferences: (j['extensionPreferences'] as Map<String, dynamic>?)
-              ?.map((k, v) => MapEntry(k, v as String)) ??
-          {},
-    );
+    // Resolve nullable parsed mode and default to appCache if null
+    defaultThumbnailCacheMode:
+        ThumbnailCacheMode.fromJson(
+          j['defaultThumbnailCacheMode'] as String?,
+        ) ??
+        ThumbnailCacheMode.appCache,
+    extensionPreferences:
+        (j['extensionPreferences'] as Map<String, dynamic>?)?.map(
+          (k, v) => MapEntry(k, v as String),
+        ) ??
+        {},
+  );
 }
-
 
 // ── Persistence service ───────────────────────────────────────────────────────
 
@@ -113,7 +118,8 @@ class AppSettingsService {
     try {
       final file = await _settingsFile;
       if (await file.exists()) {
-        final raw = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+        final raw =
+            jsonDecode(await file.readAsString()) as Map<String, dynamic>;
         settings = AppSettings.fromJson(raw);
       } else {
         settings = AppSettings();
@@ -145,7 +151,10 @@ class AppSettingsService {
 
   /// Writes master-password hash + salt to Android Keystore.
   static Future<void> saveMasterPassword(
-      AppSettings settings, String hash, String salt) async {
+    AppSettings settings,
+    String hash,
+    String salt,
+  ) async {
     settings._setHashMaterial(hash, salt);
     await _secure.write(key: _kMasterHash, value: hash);
     await _secure.write(key: _kMasterSalt, value: salt);

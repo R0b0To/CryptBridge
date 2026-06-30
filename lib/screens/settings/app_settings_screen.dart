@@ -17,13 +17,13 @@ class AppSettingsScreen extends StatefulWidget {
 class _AppSettingsScreenState extends State<AppSettingsScreen> {
   AppSettings _settings = AppSettings();
   bool _loading = true;
-  bool _saving  = false;
+  bool _saving = false;
 
-  bool _showPwFields    = false;
-  final _pwCtrl         = TextEditingController();
-  final _pwConfirmCtrl  = TextEditingController();
-  bool _obscurePw       = true;
-  bool _obscureConfirm  = true;
+  bool _showPwFields = false;
+  final _pwCtrl = TextEditingController();
+  final _pwConfirmCtrl = TextEditingController();
+  bool _obscurePw = true;
+  bool _obscureConfirm = true;
   String? _pwError;
 
   bool _biometricAvailable = false;
@@ -46,14 +46,15 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     final s = await AppSettingsService.loadSettings();
     bool bioAvail = false;
     try {
-      bioAvail = await _localAuth.canCheckBiometrics &&
+      bioAvail =
+          await _localAuth.canCheckBiometrics &&
           await _localAuth.isDeviceSupported();
     } catch (_) {}
     if (mounted) {
       setState(() {
-        _settings            = s;
-        _biometricAvailable  = bioAvail;
-        _loading             = false;
+        _settings = s;
+        _biometricAvailable = bioAvail;
+        _loading = false;
       });
     }
   }
@@ -63,9 +64,9 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     await AppSettingsService.saveSettings(_settings);
     if (mounted) {
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Settings saved')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Settings saved')));
     }
   }
 
@@ -87,7 +88,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
   /// Derives PBKDF2-SHA512 via [PasswordHasher] and persists hash to Android Keystore.
   Future<void> _confirmPassword() async {
-    final pw      = _pwCtrl.text;
+    final pw = _pwCtrl.text;
     final confirm = _pwConfirmCtrl.text;
     if (pw.isEmpty) {
       setState(() => _pwError = 'Password cannot be empty');
@@ -102,7 +103,10 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
       return;
     }
 
-    setState(() { _saving = true; _pwError = null; });
+    setState(() {
+      _saving = true;
+      _pwError = null;
+    });
 
     try {
       final (:hash, :salt) = await PasswordHasher.deriveHash(pw);
@@ -118,15 +122,15 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Master password set')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Master password set')));
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _pwError = 'Failed to hash password — please try again';
-          _saving  = false;
+          _saving = false;
         });
       }
     }
@@ -134,7 +138,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
@@ -146,13 +150,20 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
               onPressed: _saving ? null : _save,
               child: _saving
                   ? SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2.5,
-                          color: cs.primary),
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: cs.primary,
+                      ),
                     )
-                  : Text('Save',
-                      style: TextStyle(color: cs.primary,
-                          fontWeight: FontWeight.bold)),
+                  : Text(
+                      'Save',
+                      style: TextStyle(
+                        color: cs.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
             ),
           const SizedBox(width: 8),
         ],
@@ -162,214 +173,250 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-
                 _SectionLabel('SECURITY', cs),
                 const SizedBox(height: 8),
-                _Card(cs: cs, children: [
+                _Card(
+                  cs: cs,
+                  children: [
+                    _ToggleRow(
+                      icon: Icons.lock_person_rounded,
+                      title: 'Master Password',
+                      subtitle:
+                          _settings.useMasterPassword &&
+                              _settings.masterPasswordHash != null
+                          ? 'Active — tap toggle to remove'
+                          : 'Require a password to open the app',
+                      value: _settings.useMasterPassword,
+                      cs: cs,
+                      onChanged: _toggleMasterPassword,
+                    ),
 
-                  _ToggleRow(
-                    icon: Icons.lock_person_rounded,
-                    title: 'Master Password',
-                    subtitle: _settings.useMasterPassword &&
-                            _settings.masterPasswordHash != null
-                        ? 'Active — tap toggle to remove'
-                        : 'Require a password to open the app',
-                    value: _settings.useMasterPassword,
-                    cs: cs,
-                    onChanged: _toggleMasterPassword,
-                  ),
-
-                  if (_settings.useMasterPassword && _showPwFields) ...[
-                    const SizedBox(height: 14),
-                    AutofillGroup(
-                      child: Column(
-                        children: [
-                          TextField(
-                            controller: _pwCtrl,
-                            obscureText: _obscurePw,
-                            autofillHints: const [AutofillHints.newPassword],
-                            decoration: InputDecoration(
-                              labelText: _settings.masterPasswordHash != null
-                                  ? 'New password'
-                                  : 'Master password',
-                              prefixIcon: const Icon(Icons.password_rounded, size: 18),
-                              suffixIcon: IconButton(
-                                icon: Icon(
+                    if (_settings.useMasterPassword && _showPwFields) ...[
+                      const SizedBox(height: 14),
+                      AutofillGroup(
+                        child: Column(
+                          children: [
+                            TextField(
+                              controller: _pwCtrl,
+                              obscureText: _obscurePw,
+                              autofillHints: const [AutofillHints.newPassword],
+                              decoration: InputDecoration(
+                                labelText: _settings.masterPasswordHash != null
+                                    ? 'New password'
+                                    : 'Master password',
+                                prefixIcon: const Icon(
+                                  Icons.password_rounded,
+                                  size: 18,
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
                                     _obscurePw
                                         ? Icons.visibility_outlined
                                         : Icons.visibility_off_outlined,
-                                    size: 18),
-                                onPressed: () =>
-                                    setState(() => _obscurePw = !_obscurePw),
+                                    size: 18,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _obscurePw = !_obscurePw),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _pwConfirmCtrl,
-                            obscureText: _obscureConfirm,
-                            autofillHints: const [AutofillHints.newPassword],
-                            decoration: InputDecoration(
-                              labelText: 'Confirm password',
-                              prefixIcon: const Icon(Icons.password_rounded, size: 18),
-                              suffixIcon: IconButton(
-                                icon: Icon(
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _pwConfirmCtrl,
+                              obscureText: _obscureConfirm,
+                              autofillHints: const [AutofillHints.newPassword],
+                              decoration: InputDecoration(
+                                labelText: 'Confirm password',
+                                prefixIcon: const Icon(
+                                  Icons.password_rounded,
+                                  size: 18,
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
                                     _obscureConfirm
                                         ? Icons.visibility_outlined
                                         : Icons.visibility_off_outlined,
-                                    size: 18),
-                                onPressed: () =>
-                                    setState(
-                                        () => _obscureConfirm = !_obscureConfirm),
+                                    size: 18,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _obscureConfirm = !_obscureConfirm,
+                                  ),
+                                ),
                               ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_pwError != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          _pwError!,
+                          style: textTheme.bodySmall?.copyWith(color: cs.error),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _saving
+                                  ? null
+                                  : () => setState(() {
+                                      _showPwFields = false;
+                                      _pwCtrl.clear();
+                                      _pwConfirmCtrl.clear();
+                                      _pwError = null;
+                                      if (_settings.masterPasswordHash ==
+                                          null) {
+                                        _settings.useMasterPassword = false;
+                                      }
+                                    }),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, 40),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: _saving ? null : _confirmPassword,
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(0, 40),
+                              ),
+                              child: _saving
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Text(
+                                      _settings.masterPasswordHash != null
+                                          ? 'Update'
+                                          : 'Set Password',
+                                    ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    if (_pwError != null) ...[
-                      const SizedBox(height: 10),
-                      Text(_pwError!,
-                          style: textTheme.bodySmall
-                              ?.copyWith(color: cs.error)),
                     ],
-                    const SizedBox(height: 16),
-                    Row(children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _saving
-                              ? null
-                              : () => setState(() {
-                                    _showPwFields = false;
-                                    _pwCtrl.clear();
-                                    _pwConfirmCtrl.clear();
-                                    _pwError = null;
-                                    if (_settings.masterPasswordHash == null) {
-                                      _settings.useMasterPassword = false;
-                                    }
-                                  }),
-                          style: OutlinedButton.styleFrom(
-                              minimumSize: const Size(0, 40)),
-                          child: const Text('Cancel'),
+
+                    if (_settings.useMasterPassword &&
+                        _settings.masterPasswordHash != null &&
+                        !_showPwFields) ...[
+                      const Divider(height: 24),
+
+                      if (_biometricAvailable)
+                        _ToggleRow(
+                          icon: Icons.fingerprint_rounded,
+                          title: 'Biometric Unlock',
+                          subtitle: 'Use fingerprint or face instead of typing',
+                          value: _settings.masterPasswordIsFingerprint,
+                          cs: cs,
+                          onChanged: (v) => setState(
+                            () => _settings.masterPasswordIsFingerprint = v,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: _saving ? null : _confirmPassword,
-                          style: FilledButton.styleFrom(
-                              minimumSize: const Size(0, 40)),
-                          child: _saving
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2))
-                              : Text(_settings.masterPasswordHash != null
-                                  ? 'Update'
-                                  : 'Set Password'),
+                      if (!_biometricAvailable)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 32, top: 4),
+                          child: Text(
+                            'Biometric not available on this device',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
                         ),
+
+                      const SizedBox(height: 12),
+                      TextButton.icon(
+                        onPressed: () => setState(() {
+                          _showPwFields = true;
+                          _pwError = null;
+                        }),
+                        icon: const Icon(Icons.edit_rounded, size: 16),
+                        label: const Text('Change password'),
                       ),
-                    ]),
+                    ],
                   ],
-
-                  if (_settings.useMasterPassword &&
-                      _settings.masterPasswordHash != null &&
-                      !_showPwFields) ...[
-                    const Divider(height: 24),
-
-                    if (_biometricAvailable)
-                      _ToggleRow(
-                        icon: Icons.fingerprint_rounded,
-                        title: 'Biometric Unlock',
-                        subtitle: 'Use fingerprint or face instead of typing',
-                        value: _settings.masterPasswordIsFingerprint,
-                        cs: cs,
-                        onChanged: (v) => setState(
-                            () => _settings.masterPasswordIsFingerprint = v),
-                      ),
-                    if (!_biometricAvailable)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 32, top: 4),
-                        child: Text(
-                          'Biometric not available on this device',
-                          style: textTheme.bodySmall
-                              ?.copyWith(color: cs.onSurfaceVariant),
-                        ),
-                      ),
-
-                    const SizedBox(height: 12),
-                    TextButton.icon(
-                      onPressed: () => setState(
-                          () { _showPwFields = true; _pwError = null; }),
-                      icon: const Icon(Icons.edit_rounded, size: 16),
-                      label: const Text('Change password'),
-                    ),
-                  ],
-                ]),
+                ),
 
                 const SizedBox(height: 24),
 
                 _SectionLabel('PRIVACY', cs),
                 const SizedBox(height: 8),
-                _Card(cs: cs, children: [
-                  _ToggleRow(
-                    icon: Icons.security_rounded,
-                    title: 'Block Screenshots',
-                    subtitle: 'Prevent screenshots and hide content in recent apps preview.',
-                    value: _settings.blockScreenshots,
-                    cs: cs,
-                    onChanged: (v) async {
-                      setState(() => _settings.blockScreenshots = v);
-                      await vaultExplorerApi.setSecureScreen(v);
-                    },
-                  ),
-                ]),
+                _Card(
+                  cs: cs,
+                  children: [
+                    _ToggleRow(
+                      icon: Icons.security_rounded,
+                      title: 'Block Screenshots',
+                      subtitle:
+                          'Prevent screenshots and hide content in recent apps preview.',
+                      value: _settings.blockScreenshots,
+                      cs: cs,
+                      onChanged: (v) async {
+                        setState(() => _settings.blockScreenshots = v);
+                        await vaultExplorerApi.setSecureScreen(v);
+                      },
+                    ),
+                  ],
+                ),
 
                 const SizedBox(height: 24),
 
                 _SectionLabel('INTEGRATION', cs),
                 const SizedBox(height: 8),
-                _Card(cs: cs, children: [
-                  _ToggleRow(
-                    icon: Icons.folder_shared_rounded,
-                    title: 'Document Provider (default)',
-                    subtitle:
-                        'New containers will be exposed in Android\'s file '
-                        'picker by default.',
-                    value: _settings.defaultDocumentProvider,
-                    cs: cs,
-                    onChanged: (v) =>
-                        setState(() => _settings.defaultDocumentProvider = v),
-                  ),
-                  const Divider(height: 24),
-                  DropdownButtonFormField<ThumbnailCacheMode>(
-                    value: _settings.defaultThumbnailCacheMode,
-                    decoration: const InputDecoration(
-                      labelText: 'Thumbnail Caching (default)',
-                      prefixIcon: Icon(Icons.cached_rounded, size: 18),
+                _Card(
+                  cs: cs,
+                  children: [
+                    _ToggleRow(
+                      icon: Icons.folder_shared_rounded,
+                      title: 'Document Provider (default)',
+                      subtitle:
+                          'New containers will be exposed in Android\'s file '
+                          'picker by default.',
+                      value: _settings.defaultDocumentProvider,
+                      cs: cs,
+                      onChanged: (v) =>
+                          setState(() => _settings.defaultDocumentProvider = v),
                     ),
-                    items: ThumbnailCacheMode.values.map((mode) {
-                      return DropdownMenuItem(
-                        value: mode,
-                        child: Text(mode.label),
-                      );
-                    }).toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() => _settings.defaultThumbnailCacheMode = v);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      _settings.defaultThumbnailCacheMode.description,
-                      style: textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant, height: 1.4),)
-                  ),
-                ]),
+                    const Divider(height: 24),
+                    DropdownButtonFormField<ThumbnailCacheMode>(
+                      value: _settings.defaultThumbnailCacheMode,
+                      decoration: const InputDecoration(
+                        labelText: 'Thumbnail Caching (default)',
+                        prefixIcon: Icon(Icons.cached_rounded, size: 18),
+                      ),
+                      items: ThumbnailCacheMode.values.map((mode) {
+                        return DropdownMenuItem(
+                          value: mode,
+                          child: Text(mode.label),
+                        );
+                      }).toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setState(
+                            () => _settings.defaultThumbnailCacheMode = v,
+                          );
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        _settings.defaultThumbnailCacheMode.description,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
 
                 const SizedBox(height: 24),
 
@@ -408,9 +455,13 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: cs.primaryContainer.withValues(alpha: 0.3),
+                                  color: cs.primaryContainer.withValues(
+                                    alpha: 0.3,
+                                  ),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -427,10 +478,12 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                                   entry.value == 'editor'
                                       ? 'In-app Text Editor'
                                       : (entry.value == 'media'
-                                          ? 'In-app Media Viewer'
-                                          : (entry.value.startsWith('package:')
-                                              ? 'App: ${entry.value.substring(8)}'
-                                              : 'External App')),
+                                            ? 'In-app Media Viewer'
+                                            : (entry.value.startsWith(
+                                                    'package:',
+                                                  )
+                                                  ? 'App: ${entry.value.substring(8)}'
+                                                  : 'External App')),
                                   style: textTheme.bodyMedium,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -444,7 +497,9 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                                 tooltip: 'Remove association',
                                 onPressed: () {
                                   setState(() {
-                                    _settings.extensionPreferences.remove(entry.key);
+                                    _settings.extensionPreferences.remove(
+                                      entry.key,
+                                    );
                                   });
                                   _save(); // Auto-save after removing
                                 },
@@ -461,20 +516,29 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
                 _SectionLabel('ABOUT', cs),
                 const SizedBox(height: 8),
-                _Card(cs: cs, children: [
-                  _InfoRow('Version',        appVersion,                  cs),
-                  const Divider(),
-                  _InfoRow('Encryption',     'AES-256-XTS (VeraCrypt)', cs),
-                  const Divider(),
-                  _InfoRow('Key derivation', 'PBKDF2-SHA512',           cs),
-                  const Divider(),
-                  _InfoRow('Filesystem',     'FAT32 / exFAT via FatFs', cs),
-                  const Divider(),
-                  GestureDetector(
-                  onTap: () => launchUrl(Uri.parse('https://github.com/R0b0To/VaultExplorer')),
-                  child: _InfoRow('GitHub', 'https://github.com/R0b0To/VaultExplorer', cs),
+                _Card(
+                  cs: cs,
+                  children: [
+                    _InfoRow('Version', appVersion, cs),
+                    const Divider(),
+                    _InfoRow('Encryption', 'AES-256-XTS (VeraCrypt)', cs),
+                    const Divider(),
+                    _InfoRow('Key derivation', 'PBKDF2-SHA512', cs),
+                    const Divider(),
+                    _InfoRow('Filesystem', 'FAT32 / exFAT via FatFs', cs),
+                    const Divider(),
+                    GestureDetector(
+                      onTap: () => launchUrl(
+                        Uri.parse('https://github.com/R0b0To/VaultExplorer'),
+                      ),
+                      child: _InfoRow(
+                        'GitHub',
+                        'https://github.com/R0b0To/VaultExplorer',
+                        cs,
+                      ),
                     ),
-                ]),
+                  ],
+                ),
 
                 const SizedBox(height: 32),
               ],
@@ -495,12 +559,14 @@ class _SectionLabel extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 4),
-      child: Text(label,
-          style: textTheme.labelSmall?.copyWith(
-            color: cs.primary,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.4,
-          )),
+      child: Text(
+        label,
+        style: textTheme.labelSmall?.copyWith(
+          color: cs.primary,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.4,
+        ),
+      ),
     );
   }
 }
@@ -512,16 +578,17 @@ class _Card extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        color: cs.surfaceContainerLow,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: children),
-        ),
-      );
+    color: cs.surfaceContainerLow,
+    elevation: 0,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    ),
+  );
 }
 
 class _ToggleRow extends StatelessWidget {
@@ -558,13 +625,20 @@ class _ToggleRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w500)),
+                Text(
+                  title,
+                  style: textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(subtitle,
-                    style: textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant, height: 1.4)),
+                Text(
+                  subtitle,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+                ),
               ],
             ),
           ),
@@ -588,13 +662,15 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Text(label,
-              style: textTheme.bodyMedium
-                  ?.copyWith(color: cs.onSurfaceVariant)),
+          Text(
+            label,
+            style: textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+          ),
           const Spacer(),
-          Text(value,
-              style: textTheme.bodyMedium
-                  ?.copyWith(fontWeight: FontWeight.w500)),
+          Text(
+            value,
+            style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+          ),
         ],
       ),
     );

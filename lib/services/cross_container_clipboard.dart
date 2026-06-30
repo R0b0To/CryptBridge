@@ -43,19 +43,19 @@ class CrossContainerClipboard extends ChangeNotifier {
     required bool cut,
     required List<ClipboardItem> clipItems,
   }) {
-    sourceVolId       = volId;
+    sourceVolId = volId;
     sourceDisplayName = displayName;
-    isCutOperation    = cut;
-    items             = List.unmodifiable(clipItems);
+    isCutOperation = cut;
+    items = List.unmodifiable(clipItems);
     notifyListeners();
   }
 
   /// Clears the clipboard and notifies all listeners.
   void clear() {
-    sourceVolId       = null;
+    sourceVolId = null;
     sourceDisplayName = null;
-    isCutOperation    = false;
-    items             = const [];
+    isCutOperation = false;
+    items = const [];
     notifyListeners();
   }
 

@@ -50,9 +50,7 @@ class DirectoryTile extends StatelessWidget {
       subtitle: subtitle != null
           ? Text(
               subtitle!,
-              style: textTheme.bodySmall?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
+              style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
             )
           : null, // Renders the modified date below the folder title
       onTap: onTap,

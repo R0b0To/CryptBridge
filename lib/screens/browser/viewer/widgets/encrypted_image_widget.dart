@@ -42,7 +42,9 @@ class _EncryptedImageWidgetState extends State<EncryptedImageWidget> {
       _bytes = widget.prefetchedBytes;
       _error = null;
       _loadImage();
-    } else if (!_isFullResLoaded && widget.prefetchedBytes != null && _bytes == null) {
+    } else if (!_isFullResLoaded &&
+        widget.prefetchedBytes != null &&
+        _bytes == null) {
       setState(() => _bytes = widget.prefetchedBytes);
     }
   }
@@ -52,11 +54,19 @@ class _EncryptedImageWidgetState extends State<EncryptedImageWidget> {
     _currentlyLoadingFile = targetFile;
 
     try {
-      final size = await vaultExplorerApi.getFileSize(widget.container, targetFile);
+      final size = await vaultExplorerApi.getFileSize(
+        widget.container,
+        targetFile,
+      );
       if (size <= 0) throw Exception('File size is empty');
 
-      final data = await vaultExplorerApi.readFileChunk(widget.container, targetFile, 0, size);
-      
+      final data = await vaultExplorerApi.readFileChunk(
+        widget.container,
+        targetFile,
+        0,
+        size,
+      );
+
       if (!mounted || _currentlyLoadingFile != targetFile) return;
 
       if (data == null || data.isEmpty) {
@@ -77,7 +87,7 @@ class _EncryptedImageWidgetState extends State<EncryptedImageWidget> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    
+
     if (_error != null) {
       return Center(
         child: Padding(
@@ -90,7 +100,7 @@ class _EncryptedImageWidgetState extends State<EncryptedImageWidget> {
         ),
       );
     }
-    
+
     if (_bytes == null) {
       return Center(
         child: CircularProgressIndicator(
@@ -99,7 +109,7 @@ class _EncryptedImageWidgetState extends State<EncryptedImageWidget> {
         ),
       );
     }
-    
+
     return Image.memory(
       _bytes!,
       fit: widget.fit,

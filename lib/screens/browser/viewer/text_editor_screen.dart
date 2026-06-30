@@ -98,7 +98,9 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
       try {
         text = utf8.decode(bytes);
       } on FormatException {
-        throw const FormatException('The file does not appear to be a valid text file.');
+        throw const FormatException(
+          'The file does not appear to be a valid text file.',
+        );
       }
 
       _textController.text = text;
@@ -243,7 +245,9 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
           ],
         ),
         body: _buildBody(cs, Theme.of(context).textTheme),
-        bottomNavigationBar: _isLoading || _hasError ? null : _buildBottomBar(cs),
+        bottomNavigationBar: _isLoading || _hasError
+            ? null
+            : _buildBottomBar(cs),
       ),
     );
   }
@@ -273,13 +277,17 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
               const SizedBox(height: 16),
               Text(
                 'Cannot open file',
-                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
                 _errorMessage,
                 textAlign: TextAlign.center,
-                style: textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                style: textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 24),
               OutlinedButton.icon(
@@ -331,9 +339,7 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
     return Container(
       decoration: BoxDecoration(
         color: cs.surfaceContainerLow,
-        border: Border(
-          top: BorderSide(color: cs.outlineVariant, width: 0.5),
-        ),
+        border: Border(top: BorderSide(color: cs.outlineVariant, width: 0.5)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(

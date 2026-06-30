@@ -6,11 +6,8 @@ class BreadcrumbBar extends StatelessWidget {
   final List<PathSegment> stack;
   final ValueChanged<int> onTap;
 
-  const BreadcrumbBar({
-    Key? key,
-    required this.stack,
-    required this.onTap,
-  }) : super(key: key);
+  const BreadcrumbBar({Key? key, required this.stack, required this.onTap})
+    : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -21,12 +18,7 @@ class BreadcrumbBar extends StatelessWidget {
       height: 40, // Expanded slightly to provide a better touch target area
       decoration: BoxDecoration(
         color: cs.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: cs.outlineVariant,
-            width: 1,
-          ),
-        ),
+        border: Border(bottom: BorderSide(color: cs.outlineVariant, width: 1)),
       ),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
@@ -34,14 +26,17 @@ class BreadcrumbBar extends StatelessWidget {
         itemCount: stack.length,
         itemBuilder: (_, i) {
           final isLast = i == stack.length - 1;
-          
+
           return Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (isLast)
                 // The current directory is non-interactive to save redundant taps
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   child: Text(
                     stack[i].label,
                     style: textTheme.labelLarge?.copyWith(
@@ -56,7 +51,10 @@ class BreadcrumbBar extends StatelessWidget {
                   onTap: () => onTap(i),
                   borderRadius: BorderRadius.circular(8),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     child: Text(
                       stack[i].label,
                       style: textTheme.labelLarge?.copyWith(
@@ -72,7 +70,7 @@ class BreadcrumbBar extends StatelessWidget {
                   child: Icon(
                     Icons.chevron_right_rounded, // Softer rounded chevron
                     size: 16,
-                    color: cs.onSurfaceVariant.withValues(alpha:0.5),
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                 ),
             ],

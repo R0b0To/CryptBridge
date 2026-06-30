@@ -79,9 +79,9 @@ class _ConflictResolutionSheetState extends State<ConflictResolutionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final count     = widget.conflicts.length;
+    final count = widget.conflicts.length;
 
     return DraggableScrollableSheet(
       expand: false,
@@ -106,14 +106,14 @@ class _ConflictResolutionSheetState extends State<ConflictResolutionSheet> {
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
               child: Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded,
-                      size: 20, color: cs.error),
+                  Icon(Icons.warning_amber_rounded, size: 20, color: cs.error),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       '$count item${count == 1 ? '' : 's'} already exist',
-                      style: textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
@@ -124,8 +124,9 @@ class _ConflictResolutionSheetState extends State<ConflictResolutionSheet> {
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: Text(
                 'Choose what happens to each item, or apply one choice to all.',
-                style: textTheme.bodySmall
-                    ?.copyWith(color: cs.onSurfaceVariant),
+                style: textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
               ),
             ),
 
@@ -148,8 +149,7 @@ class _ConflictResolutionSheetState extends State<ConflictResolutionSheet> {
                         label: 'Overwrite all',
                         icon: Icons.find_replace_rounded,
                         isDestructive: true,
-                        onTap: () =>
-                            _applyToAll(ConflictResolution.overwrite),
+                        onTap: () => _applyToAll(ConflictResolution.overwrite),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -157,8 +157,7 @@ class _ConflictResolutionSheetState extends State<ConflictResolutionSheet> {
                       child: _ApplyAllChip(
                         label: 'Keep both',
                         icon: Icons.content_copy_rounded,
-                        onTap: () =>
-                            _applyToAll(ConflictResolution.keepBoth),
+                        onTap: () => _applyToAll(ConflictResolution.keepBoth),
                       ),
                     ),
                   ],
@@ -173,10 +172,11 @@ class _ConflictResolutionSheetState extends State<ConflictResolutionSheet> {
                 controller: scrollController,
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 itemCount: widget.conflicts.length,
-                separatorBuilder: (_, __) => const Divider(height: 1, indent: 56),
+                separatorBuilder: (_, __) =>
+                    const Divider(height: 1, indent: 56),
                 itemBuilder: (_, i) {
                   final conflict = widget.conflicts[i];
-                  final key      = conflict.item.name.toLowerCase();
+                  final key = conflict.item.name.toLowerCase();
                   return _ConflictRow(
                     conflict: conflict,
                     resolution: _resolutions[key]!,
@@ -191,7 +191,11 @@ class _ConflictResolutionSheetState extends State<ConflictResolutionSheet> {
             // ── Actions ──────────────────────────────────────────────────────
             Padding(
               padding: EdgeInsets.fromLTRB(
-                  16, 12, 16, 12 + MediaQuery.of(context).padding.bottom),
+                16,
+                12,
+                16,
+                12 + MediaQuery.of(context).padding.bottom,
+              ),
               child: Row(
                 children: [
                   Expanded(
@@ -255,9 +259,9 @@ class _ApplyAllChip extends StatelessWidget {
                 label,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: color,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -284,16 +288,18 @@ class _ConflictRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final item      = conflict.item;
+    final item = conflict.item;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Icon(
-            item.isDir ? Icons.folder_rounded : Icons.insert_drive_file_outlined,
+            item.isDir
+                ? Icons.folder_rounded
+                : Icons.insert_drive_file_outlined,
             size: 20,
             color: item.isDir ? cs.secondary : cs.onSurfaceVariant,
           ),

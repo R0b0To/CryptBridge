@@ -6,13 +6,13 @@ class AppCacheEncryption {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
   static const _kCacheKey = 'app_cache_aes_key';
-  
+
   static enc.Key? _cachedKey;
 
   /// Retrieves the persistent symmetric key, creating it if it doesn't exist.
   static Future<enc.Key> getEncryptionKey() async {
     if (_cachedKey != null) return _cachedKey!;
-    
+
     final base64Key = await _secure.read(key: _kCacheKey);
     if (base64Key != null) {
       _cachedKey = enc.Key.fromBase64(base64Key);

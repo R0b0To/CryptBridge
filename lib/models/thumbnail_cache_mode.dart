@@ -28,9 +28,12 @@ enum ThumbnailCacheMode {
 
   String get label {
     switch (this) {
-      case ThumbnailCacheMode.appCache:    return 'App cache';
-      case ThumbnailCacheMode.inContainer: return 'Inside container';
-      case ThumbnailCacheMode.disabled:    return 'Disabled';
+      case ThumbnailCacheMode.appCache:
+        return 'App cache';
+      case ThumbnailCacheMode.inContainer:
+        return 'Inside container';
+      case ThumbnailCacheMode.disabled:
+        return 'Disabled';
     }
   }
 
@@ -51,18 +54,25 @@ enum ThumbnailCacheMode {
 
   String toJson() {
     switch (this) {
-      case ThumbnailCacheMode.appCache:    return 'appCache';
-      case ThumbnailCacheMode.inContainer: return 'inContainer';
-      case ThumbnailCacheMode.disabled:    return 'disabled';
+      case ThumbnailCacheMode.appCache:
+        return 'appCache';
+      case ThumbnailCacheMode.inContainer:
+        return 'inContainer';
+      case ThumbnailCacheMode.disabled:
+        return 'disabled';
     }
   }
 
   static ThumbnailCacheMode? fromJson(String? value) {
     switch (value) {
-      case 'appCache':    return ThumbnailCacheMode.appCache;
-      case 'inContainer': return ThumbnailCacheMode.inContainer;
-      case 'disabled':    return ThumbnailCacheMode.disabled;
-      default:            return null; // Return null so we know it isn't configured
+      case 'appCache':
+        return ThumbnailCacheMode.appCache;
+      case 'inContainer':
+        return ThumbnailCacheMode.inContainer;
+      case 'disabled':
+        return ThumbnailCacheMode.disabled;
+      default:
+        return null; // Return null so we know it isn't configured
     }
   }
 }

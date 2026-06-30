@@ -105,15 +105,15 @@ mixin SelectionMixin<T extends StatefulWidget> on State<T> {
   ///   "2 folders (calculating…)"
   ///   "1 file · 200 KB + 1 folder (calculating…)"
   String get selectionSummary {
-    final fc       = selectedFolderCount;
+    final fc = selectedFolderCount;
     final fileSize = selectedFileBytes;
-    final total    = selectedTotalBytes;
+    final total = selectedTotalBytes;
 
     // ── file part ─────────────────────────────────────────────────────────
     final fileCount = selectedFileCount;
-    final filePart  = fileCount > 0
+    final filePart = fileCount > 0
         ? '$fileCount ${fileCount == 1 ? 'file' : 'files'}'
-          '${fileSize > 0 ? ' · ${formatBytes(fileSize)}' : ''}'
+              '${fileSize > 0 ? ' · ${formatBytes(fileSize)}' : ''}'
         : '';
 
     if (fc == 0) return filePart;
@@ -126,7 +126,9 @@ mixin SelectionMixin<T extends StatefulWidget> on State<T> {
       folderSizePart = '(calculating…)';
     } else {
       final resolvedBytes = total - fileSize;
-      folderSizePart = resolvedBytes > 0 ? '· ${formatBytes(resolvedBytes)}' : '';
+      folderSizePart = resolvedBytes > 0
+          ? '· ${formatBytes(resolvedBytes)}'
+          : '';
     }
 
     final folderPart = '$folderLabel $folderSizePart'.trim();
@@ -180,8 +182,7 @@ mixin SelectionMixin<T extends StatefulWidget> on State<T> {
             ? e.name
             : '$currentDirPath/${e.name}';
 
-        final size =
-            await vaultExplorerApi.getFolderSize(container, fatPath);
+        final size = await vaultExplorerApi.getFolderSize(container, fatPath);
 
         if (!mounted) return;
 

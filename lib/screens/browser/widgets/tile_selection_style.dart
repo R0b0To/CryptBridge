@@ -26,8 +26,10 @@ abstract final class TileSelectionStyle {
       cs.primaryContainer.withValues(alpha: 0.3);
 
   /// Standard content padding shared by both row tiles.
-  static const contentPadding =
-      EdgeInsets.symmetric(horizontal: 16, vertical: 4);
+  static const contentPadding = EdgeInsets.symmetric(
+    horizontal: 16,
+    vertical: 4,
+  );
 
   /// Title [FontWeight] — slightly bolder when selected so the row reads as
   /// "active" without changing size or color.
@@ -41,8 +43,7 @@ abstract final class TileSelectionStyle {
     ColorScheme cs, {
     required bool selected,
     required Color unselectedColor,
-  }) =>
-      selected ? cs.primary : unselectedColor;
+  }) => selected ? cs.primary : unselectedColor;
 }
 
 /// The trailing checkbox-style indicator shown on a row tile while

@@ -37,10 +37,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   late final VideoPlaybackManager _playbackManager;
   late final PageController _pageController;
 
-  final ValueNotifier<ScrollPhysics> _swipePhysicsNotifier = 
+  final ValueNotifier<ScrollPhysics> _swipePhysicsNotifier =
       ValueNotifier<ScrollPhysics>(const BouncingScrollPhysics());
-  
-  final ValueNotifier<VideoPlaybackProgress> _videoProgressNotifier = 
+
+  final ValueNotifier<VideoPlaybackProgress> _videoProgressNotifier =
       ValueNotifier<VideoPlaybackProgress>(const VideoPlaybackProgress());
 
   bool _showUI = true;
@@ -78,12 +78,14 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       initialIndex: widget.initialIndex,
       startingFolder: widget.startingFolder,
     );
-    
+
     _playbackManager = VideoPlaybackManager();
     _pageController = PageController(initialPage: widget.initialIndex);
 
     _playlistController.addListener(_onPlaylistUpdate);
-    _playbackManager.activeControllerNotifier.addListener(_onActiveVideoControllerChanged);
+    _playbackManager.activeControllerNotifier.addListener(
+      _onActiveVideoControllerChanged,
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startSlideshowTimerIfNeeded();
@@ -122,11 +124,13 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     final isInitialized = controller.value.isInitialized;
     final progress = _videoProgressNotifier.value;
 
-    if (isInitialized && _videoPlaybackMode == VideoPlaybackMode.loop &&
+    if (isInitialized &&
+        _videoPlaybackMode == VideoPlaybackMode.loop &&
         progress.duration > Duration.zero &&
         progress.position >= progress.duration) {
       _manualLoop(controller);
-    } else if (isInitialized && _videoPlaybackMode != VideoPlaybackMode.loop &&
+    } else if (isInitialized &&
+        _videoPlaybackMode != VideoPlaybackMode.loop &&
         progress.duration > Duration.zero &&
         progress.position >= progress.duration) {
       if (_videoPlaybackMode == VideoPlaybackMode.playAndAdvance) {
@@ -158,7 +162,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
   Future<void> _prefetchThumbnail(String fileName) async {
     if (!MediaViewerConstants.isImage(fileName)) return;
-    if (_prefetchedImages.containsKey(fileName) || _prefetchingActive.contains(fileName)) return;
+    if (_prefetchedImages.containsKey(fileName) ||
+        _prefetchingActive.contains(fileName))
+      return;
 
     _prefetchingActive.add(fileName);
     try {
@@ -170,7 +176,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       if (thumbBytes != null && thumbBytes.isNotEmpty && mounted) {
         setState(() {
           _prefetchedImages[fileName] = thumbBytes;
-          if (_prefetchedImages.length > MediaViewerConstants.maxPrefetchCacheSize) {
+          if (_prefetchedImages.length >
+              MediaViewerConstants.maxPrefetchCacheSize) {
             _prefetchedImages.remove(_prefetchedImages.keys.first);
           }
         });
@@ -245,7 +252,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     final fileToDelete = _playlistController.currentFile;
     bool success = false;
     try {
-      success = await vaultExplorerApi.deleteFile(widget.container, fileToDelete);
+      success = await vaultExplorerApi.deleteFile(
+        widget.container,
+        fileToDelete,
+      );
     } catch (e) {
       debugPrint('Deletion error operation failed: $e');
     }
@@ -253,21 +263,24 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     if (success && mounted) {
       _prefetchedImages.remove(fileToDelete);
       _playlistController.removeCurrent();
-      
+
       if (_playlistController.isEmpty) {
         Navigator.pop(context);
         return;
       }
-      
+
       _pageController.jumpToPage(_playlistController.currentIndex);
       _prefetchSurroundingItems();
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('File deleted successfully')),
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: const Text('Failed to delete file'), backgroundColor: cs.error),
+        SnackBar(
+          content: const Text('Failed to delete file'),
+          backgroundColor: cs.error,
+        ),
       );
     }
   }
@@ -280,10 +293,14 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   void _startHideTimer() {
     _hideTimer?.cancel();
     if (_activeMenuCount > 0) return;
-    
+
     _hideTimer = Timer(MediaViewerConstants.uiHideDelay, () {
       final controller = _playbackManager.activeController;
-      if (mounted && controller != null && controller.value.isPlaying && _showUI && _activeMenuCount == 0) {
+      if (mounted &&
+          controller != null &&
+          controller.value.isPlaying &&
+          _showUI &&
+          _activeMenuCount == 0) {
         _setUIVisibility(false);
       }
     });
@@ -320,7 +337,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
         _lastListenedController!.removeListener(_onControllerTickUpdate);
       } catch (_) {}
     }
-    _playbackManager.activeControllerNotifier.removeListener(_onActiveVideoControllerChanged);
+    _playbackManager.activeControllerNotifier.removeListener(
+      _onActiveVideoControllerChanged,
+    );
     WakelockPlus.toggle(enable: false);
     _cancelSlideshowTimer();
     _hideTimer?.cancel();
@@ -337,7 +356,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   String _formatDuration(Duration d) {
     final String minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final String seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    
+
     if (d.inHours > 0) {
       final String hours = d.inHours.toString().padLeft(2, '0');
       return '$hours:$minutes:$seconds';
@@ -374,8 +393,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            final isLandscapeLayout = MediaQuery.of(context).orientation == Orientation.landscape;
-            final double maxSheetHeight = isLandscapeLayout 
+            final isLandscapeLayout =
+                MediaQuery.of(context).orientation == Orientation.landscape;
+            final double maxSheetHeight = isLandscapeLayout
                 ? MediaQuery.of(context).size.height * 0.72
                 : MediaQuery.of(context).size.height * 0.9;
 
@@ -386,7 +406,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                   children: [
                     if (onBack != null)
                       IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70),
+                        icon: const Icon(
+                          Icons.arrow_back_rounded,
+                          color: Colors.white70,
+                        ),
                         onPressed: onBack,
                       )
                     else
@@ -399,7 +422,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
                         ),
-                        textAlign: onBack != null ? TextAlign.left : TextAlign.center,
+                        textAlign: onBack != null
+                            ? TextAlign.left
+                            : TextAlign.center,
                       ),
                     ),
                     if (onBack != null)
@@ -412,14 +437,20 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
             }
 
             return ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.75),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(28),
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
                   ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxHeight: maxSheetHeight),
@@ -441,38 +472,101 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                           Flexible(
                             child: SingleChildScrollView(
                               child: Padding(
-                                padding: const EdgeInsets.only(left: 20, right: 20, top: 4, bottom: 24),
+                                padding: const EdgeInsets.only(
+                                  left: 20,
+                                  right: 20,
+                                  top: 4,
+                                  bottom: 24,
+                                ),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     if (sheetPage == 'main') ...[
-                                      buildHeader(isImage ? 'Image Settings' : 'Playback Settings', null),
+                                      buildHeader(
+                                        isImage
+                                            ? 'Image Settings'
+                                            : 'Playback Settings',
+                                        null,
+                                      ),
                                       const SizedBox(height: 8),
                                       _buildMainPage(
                                         context,
                                         isImage,
                                         setSheetState,
-                                        onGoToImageFit: () => setSheetState(() => sheetPage = 'imageFit'),
-                                        onGoToSlideshowDelay: () => setSheetState(() => sheetPage = 'slideshowDelay'),
-                                        onGoToPlaybackSpeed: () => setSheetState(() => sheetPage = 'playbackSpeed'),
-                                        onGoToPlaybackMode: () => setSheetState(() => sheetPage = 'playbackMode'),
+                                        onGoToImageFit: () => setSheetState(
+                                          () => sheetPage = 'imageFit',
+                                        ),
+                                        onGoToSlideshowDelay: () =>
+                                            setSheetState(
+                                              () =>
+                                                  sheetPage = 'slideshowDelay',
+                                            ),
+                                        onGoToPlaybackSpeed: () =>
+                                            setSheetState(
+                                              () => sheetPage = 'playbackSpeed',
+                                            ),
+                                        onGoToPlaybackMode: () => setSheetState(
+                                          () => sheetPage = 'playbackMode',
+                                        ),
                                       ),
                                     ] else if (sheetPage == 'imageFit') ...[
-                                      buildHeader('Image Fit Mode', () => setSheetState(() => sheetPage = 'main')),
+                                      buildHeader(
+                                        'Image Fit Mode',
+                                        () => setSheetState(
+                                          () => sheetPage = 'main',
+                                        ),
+                                      ),
                                       const SizedBox(height: 8),
-                                      _buildImageFitSubmenu(cs, () => setSheetState(() => sheetPage = 'main')),
-                                    ] else if (sheetPage == 'slideshowDelay') ...[
-                                      buildHeader('Slideshow Delay', () => setSheetState(() => sheetPage = 'main')),
+                                      _buildImageFitSubmenu(
+                                        cs,
+                                        () => setSheetState(
+                                          () => sheetPage = 'main',
+                                        ),
+                                      ),
+                                    ] else if (sheetPage ==
+                                        'slideshowDelay') ...[
+                                      buildHeader(
+                                        'Slideshow Delay',
+                                        () => setSheetState(
+                                          () => sheetPage = 'main',
+                                        ),
+                                      ),
                                       const SizedBox(height: 8),
-                                      _buildSlideshowDelaySubmenu(cs, () => setSheetState(() => sheetPage = 'main')),
-                                    ] else if (sheetPage == 'playbackSpeed') ...[
-                                      buildHeader('Playback Speed', () => setSheetState(() => sheetPage = 'main')),
+                                      _buildSlideshowDelaySubmenu(
+                                        cs,
+                                        () => setSheetState(
+                                          () => sheetPage = 'main',
+                                        ),
+                                      ),
+                                    ] else if (sheetPage ==
+                                        'playbackSpeed') ...[
+                                      buildHeader(
+                                        'Playback Speed',
+                                        () => setSheetState(
+                                          () => sheetPage = 'main',
+                                        ),
+                                      ),
                                       const SizedBox(height: 8),
-                                      _buildPlaybackSpeedSubmenu(cs, () => setSheetState(() => sheetPage = 'main')),
+                                      _buildPlaybackSpeedSubmenu(
+                                        cs,
+                                        () => setSheetState(
+                                          () => sheetPage = 'main',
+                                        ),
+                                      ),
                                     ] else if (sheetPage == 'playbackMode') ...[
-                                      buildHeader('Playback Mode', () => setSheetState(() => sheetPage = 'main')),
+                                      buildHeader(
+                                        'Playback Mode',
+                                        () => setSheetState(
+                                          () => sheetPage = 'main',
+                                        ),
+                                      ),
                                       const SizedBox(height: 8),
-                                      _buildPlaybackModeSubmenu(cs, () => setSheetState(() => sheetPage = 'main')),
+                                      _buildPlaybackModeSubmenu(
+                                        cs,
+                                        () => setSheetState(
+                                          () => sheetPage = 'main',
+                                        ),
+                                      ),
                                     ],
                                   ],
                                 ),
@@ -510,16 +604,27 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.rotate_right_rounded, color: Colors.white70),
-            title: const Text('Rotate 90°', style: TextStyle(color: Colors.white, fontSize: 14)),
+            leading: const Icon(
+              Icons.rotate_right_rounded,
+              color: Colors.white70,
+            ),
+            title: const Text(
+              'Rotate 90°',
+              style: TextStyle(color: Colors.white, fontSize: 14),
+            ),
             trailing: Text(
               '${(_rotations[currentName] ?? 0) * 90}°',
-              style: TextStyle(color: cs.primary, fontWeight: FontWeight.bold, fontSize: 13),
+              style: TextStyle(
+                color: cs.primary,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
             ),
             onTap: () {
               HapticFeedback.mediumImpact();
               setState(() {
-                _rotations[currentName] = ((_rotations[currentName] ?? 0) + 1) % 4;
+                _rotations[currentName] =
+                    ((_rotations[currentName] ?? 0) + 1) % 4;
               });
               setSheetState(() {});
             },
@@ -527,8 +632,14 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
           const Divider(color: Colors.white10),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.aspect_ratio_rounded, color: Colors.white70),
-            title: const Text('Image Fit Mode', style: TextStyle(color: Colors.white, fontSize: 14)),
+            leading: const Icon(
+              Icons.aspect_ratio_rounded,
+              color: Colors.white70,
+            ),
+            title: const Text(
+              'Image Fit Mode',
+              style: TextStyle(color: Colors.white, fontSize: 14),
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -537,7 +648,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                   style: TextStyle(color: cs.primary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
-                const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white30,
+                  size: 20,
+                ),
               ],
             ),
             onTap: () {
@@ -549,7 +664,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.timer_outlined, color: Colors.white70),
-            title: const Text('Slideshow Delay', style: TextStyle(color: Colors.white, fontSize: 14)),
+            title: const Text(
+              'Slideshow Delay',
+              style: TextStyle(color: Colors.white, fontSize: 14),
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -558,7 +676,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                   style: TextStyle(color: cs.primary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
-                const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white30,
+                  size: 20,
+                ),
               ],
             ),
             onTap: () {
@@ -569,22 +691,35 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
         ],
       );
     } else {
-      final hasSubtitles = _playbackManager.isSubtitleAvailable(_playlistController.currentIndex);
+      final hasSubtitles = _playbackManager.isSubtitleAvailable(
+        _playlistController.currentIndex,
+      );
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.rotate_right_rounded, color: Colors.white70),
-            title: const Text('Rotate 90°', style: TextStyle(color: Colors.white, fontSize: 14)),
+            leading: const Icon(
+              Icons.rotate_right_rounded,
+              color: Colors.white70,
+            ),
+            title: const Text(
+              'Rotate 90°',
+              style: TextStyle(color: Colors.white, fontSize: 14),
+            ),
             trailing: Text(
               '${(_rotations[currentName] ?? 0) * 90}°',
-              style: TextStyle(color: cs.primary, fontWeight: FontWeight.bold, fontSize: 13),
+              style: TextStyle(
+                color: cs.primary,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
             ),
             onTap: () {
               HapticFeedback.mediumImpact();
               setState(() {
-                _rotations[currentName] = ((_rotations[currentName] ?? 0) + 1) % 4;
+                _rotations[currentName] =
+                    ((_rotations[currentName] ?? 0) + 1) % 4;
               });
               setSheetState(() {});
             },
@@ -592,8 +727,14 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
           const Divider(color: Colors.white10),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.slow_motion_video_rounded, color: Colors.white70),
-            title: const Text('Playback Speed', style: TextStyle(color: Colors.white, fontSize: 14)),
+            leading: const Icon(
+              Icons.slow_motion_video_rounded,
+              color: Colors.white70,
+            ),
+            title: const Text(
+              'Playback Speed',
+              style: TextStyle(color: Colors.white, fontSize: 14),
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -602,7 +743,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                   style: TextStyle(color: cs.primary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
-                const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white30,
+                  size: 20,
+                ),
               ],
             ),
             onTap: () {
@@ -613,8 +758,14 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
           const Divider(color: Colors.white10),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.play_circle_outline_rounded, color: Colors.white70),
-            title: const Text('Playback Mode', style: TextStyle(color: Colors.white, fontSize: 14)),
+            leading: const Icon(
+              Icons.play_circle_outline_rounded,
+              color: Colors.white70,
+            ),
+            title: const Text(
+              'Playback Mode',
+              style: TextStyle(color: Colors.white, fontSize: 14),
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -623,7 +774,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                   style: TextStyle(color: cs.primary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
-                const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white30,
+                  size: 20,
+                ),
               ],
             ),
             onTap: () {
@@ -635,8 +790,14 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
             const Divider(color: Colors.white10),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              secondary: const Icon(Icons.subtitles_rounded, color: Colors.white70),
-              title: const Text('Subtitles', style: TextStyle(color: Colors.white, fontSize: 14)),
+              secondary: const Icon(
+                Icons.subtitles_rounded,
+                color: Colors.white70,
+              ),
+              title: const Text(
+                'Subtitles',
+                style: TextStyle(color: Colors.white, fontSize: 14),
+              ),
               value: _subtitlesEnabled,
               activeColor: cs.primary,
               onChanged: (val) {
@@ -667,7 +828,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
-          trailing: isSelected ? Icon(Icons.check_rounded, color: cs.primary, size: 18) : null,
+          trailing: isSelected
+              ? Icon(Icons.check_rounded, color: cs.primary, size: 18)
+              : null,
           onTap: () {
             HapticFeedback.lightImpact();
             setState(() => _imageFit = fit);
@@ -694,7 +857,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
-          trailing: isSelected ? Icon(Icons.check_rounded, color: cs.primary, size: 18) : null,
+          trailing: isSelected
+              ? Icon(Icons.check_rounded, color: cs.primary, size: 18)
+              : null,
           onTap: () {
             HapticFeedback.lightImpact();
             setState(() {
@@ -725,7 +890,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
-          trailing: isSelected ? Icon(Icons.check_rounded, color: cs.primary, size: 18) : null,
+          trailing: isSelected
+              ? Icon(Icons.check_rounded, color: cs.primary, size: 18)
+              : null,
           onTap: () {
             HapticFeedback.lightImpact();
             setState(() => _playbackSpeed = speed);
@@ -738,7 +905,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   }
 
   Widget _buildPlaybackModeSubmenu(ColorScheme cs, VoidCallback onBack) {
-    final modes = [VideoPlaybackMode.playOnce, VideoPlaybackMode.loop, VideoPlaybackMode.playAndAdvance];
+    final modes = [
+      VideoPlaybackMode.playOnce,
+      VideoPlaybackMode.loop,
+      VideoPlaybackMode.playAndAdvance,
+    ];
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: modes.map((mode) {
@@ -753,7 +924,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
-          trailing: isSelected ? Icon(Icons.check_rounded, color: cs.primary, size: 18) : null,
+          trailing: isSelected
+              ? Icon(Icons.check_rounded, color: cs.primary, size: 18)
+              : null,
           onTap: () {
             HapticFeedback.lightImpact();
             setState(() => _videoPlaybackMode = mode);
@@ -803,14 +976,21 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                 },
                 itemBuilder: (context, index) {
                   final volId = widget.container.volId;
-                  final escapedPath = Uri.encodeComponent(_playlistController.playlist[index]);
-                  final contentUriString = 'content://com.aeidolon.vaultexplorer.documents/document/$volId%3Afile%3A$escapedPath';
+                  final escapedPath = Uri.encodeComponent(
+                    _playlistController.playlist[index],
+                  );
+                  final contentUriString =
+                      'content://com.aeidolon.vaultexplorer.documents/document/$volId%3Afile%3A$escapedPath';
                   final fileName = _playlistController.playlist[index];
                   final prefetchedBytes = _prefetchedImages[fileName];
 
                   final ext = fileName.split('.').last.toLowerCase();
-                  final isImg = MediaViewerConstants.imageExtensions.contains(ext);
-                  final isAudio = MediaViewerConstants.audioExtensions.contains(ext);
+                  final isImg = MediaViewerConstants.imageExtensions.contains(
+                    ext,
+                  );
+                  final isAudio = MediaViewerConstants.audioExtensions.contains(
+                    ext,
+                  );
 
                   return Container(
                     color: Colors.black,
@@ -825,8 +1005,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                             showUI: _showUI,
                             onToggleUI: _setUIVisibility,
                             onZoomChanged: (allowSwipe) {
-                              _swipePhysicsNotifier.value = allowSwipe 
-                                  ? const BouncingScrollPhysics() 
+                              _swipePhysicsNotifier.value = allowSwipe
+                                  ? const BouncingScrollPhysics()
                                   : const NeverScrollableScrollPhysics();
                             },
                           )
@@ -850,15 +1030,16 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                               }
                             },
                             onZoomChanged: (allowSwipe) {
-                              _swipePhysicsNotifier.value = allowSwipe 
-                                  ? const BouncingScrollPhysics() 
+                              _swipePhysicsNotifier.value = allowSwipe
+                                  ? const BouncingScrollPhysics()
                                   : const NeverScrollableScrollPhysics();
                             },
                             onVideoControllerInitialized: (controller) {
                               _playbackManager.registerController(
                                 index: index,
                                 controller: controller,
-                                currentFocus: index == _playlistController.currentIndex,
+                                currentFocus:
+                                    index == _playlistController.currentIndex,
                               );
                             },
                             onVideoControllerDisposed: () {
@@ -899,7 +1080,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
   Widget _buildCenterTransportControls(ColorScheme cs) {
     final bool isFirst = _playlistController.currentIndex == 0;
-    final bool isLast = _playlistController.currentIndex == _playlistController.playlist.length - 1;
+    final bool isLast =
+        _playlistController.currentIndex ==
+        _playlistController.playlist.length - 1;
     final currentName = _playlistController.currentFile;
     final isImage = MediaViewerConstants.isImage(currentName);
 
@@ -907,7 +1090,8 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     if (isImage) {
       isPlayingState = _autoAdvance;
     } else {
-      isPlayingState = _playbackManager.activeController?.value.isPlaying ?? false;
+      isPlayingState =
+          _playbackManager.activeController?.value.isPlaying ?? false;
     }
     WakelockPlus.toggle(enable: isPlayingState);
 
@@ -928,7 +1112,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
               ),
               const SizedBox(width: 32),
               _buildCenterCircleButton(
-                icon: isPlayingState ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                icon: isPlayingState
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded,
                 isLarge: true,
                 onPressed: () {
                   HapticFeedback.mediumImpact();
@@ -980,7 +1166,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: Colors.black.withValues(alpha: isLarge ? 0.25 : 0.15),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.05), width: 1),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.05),
+          width: 1,
+        ),
       ),
       child: IconButton(
         iconSize: isLarge ? 48 : 32,
@@ -1033,7 +1222,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                     const SizedBox(height: 2),
                     Text(
                       '${_playlistController.currentIndex + 1} of $total${_playlistController.isScanningSubfolders ? '  ·  scanning…' : ''}',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 11,
+                      ),
                     ),
                   ],
                 ),
@@ -1056,7 +1248,9 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       onOpen: _menuOpened,
       onClose: _menuClosed,
       style: MenuStyle(
-        backgroundColor: WidgetStateProperty.all(Colors.black.withValues(alpha: 0.9)),
+        backgroundColor: WidgetStateProperty.all(
+          Colors.black.withValues(alpha: 0.9),
+        ),
         elevation: WidgetStateProperty.all(12),
         shape: WidgetStateProperty.all(
           RoundedRectangleBorder(
@@ -1078,23 +1272,34 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
           style: MenuItemButton.styleFrom(foregroundColor: Colors.white),
           onPressed: () async {
             try {
-              await vaultExplorerApi.openWithApp(widget.container, _playlistController.currentFile);
+              await vaultExplorerApi.openWithApp(
+                widget.container,
+                _playlistController.currentFile,
+              );
             } catch (e) {
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Failed to open in external app: $e'),
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                ));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to open in external app: $e'),
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                );
               }
             }
           },
-          leadingIcon: const Icon(Icons.open_in_new_rounded, size: 18, color: Colors.white70),
+          leadingIcon: const Icon(
+            Icons.open_in_new_rounded,
+            size: 18,
+            color: Colors.white70,
+          ),
           child: const Text('Open with App'),
         ),
         SubmenuButton(
           style: SubmenuButton.styleFrom(foregroundColor: Colors.white),
           menuStyle: MenuStyle(
-            backgroundColor: WidgetStateProperty.all(Colors.black.withValues(alpha: 0.9)),
+            backgroundColor: WidgetStateProperty.all(
+              Colors.black.withValues(alpha: 0.9),
+            ),
             shape: WidgetStateProperty.all(
               RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -1102,13 +1307,19 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
               ),
             ),
           ),
-          leadingIcon: const Icon(Icons.screen_rotation_rounded, size: 18, color: Colors.white70),
+          leadingIcon: const Icon(
+            Icons.screen_rotation_rounded,
+            size: 18,
+            color: Colors.white70,
+          ),
           menuChildren: [
             MenuItemButton(
               style: MenuItemButton.styleFrom(foregroundColor: Colors.white),
               onPressed: () {
                 HapticFeedback.lightImpact();
-                SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+                SystemChrome.setPreferredOrientations([
+                  DeviceOrientation.portraitUp,
+                ]);
               },
               child: const Text('Force Portrait'),
             ),
@@ -1147,13 +1358,19 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
             size: 18,
             color: _playlistController.isShuffled ? cs.primary : Colors.white70,
           ),
-          child: Text(_playlistController.isShuffled ? 'Disable Shuffle' : 'Shuffle Playlist'),
+          child: Text(
+            _playlistController.isShuffled
+                ? 'Disable Shuffle'
+                : 'Shuffle Playlist',
+          ),
         ),
         const PopupMenuDivider(color: Colors.white10),
         SubmenuButton(
           style: SubmenuButton.styleFrom(foregroundColor: Colors.white),
           menuStyle: MenuStyle(
-            backgroundColor: WidgetStateProperty.all(Colors.black.withValues(alpha: 0.9)),
+            backgroundColor: WidgetStateProperty.all(
+              Colors.black.withValues(alpha: 0.9),
+            ),
             shape: WidgetStateProperty.all(
               RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -1164,7 +1381,10 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
           menuChildren: [
             MenuItemButton(
               style: MenuItemButton.styleFrom(
-                foregroundColor: _playlistController.selectedFolder == 'Current Folder Only' ? cs.primary : Colors.white,
+                foregroundColor:
+                    _playlistController.selectedFolder == 'Current Folder Only'
+                    ? cs.primary
+                    : Colors.white,
               ),
               onPressed: () async {
                 await _playlistController.filterByFolder('Current Folder Only');
@@ -1172,14 +1392,17 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                   _pageController.jumpToPage(_playlistController.currentIndex);
                 }
               },
-              leadingIcon: _playlistController.selectedFolder == 'Current Folder Only'
+              leadingIcon:
+                  _playlistController.selectedFolder == 'Current Folder Only'
                   ? Icon(Icons.check_rounded, size: 16, color: cs.primary)
                   : const SizedBox(width: 16),
               child: const Text('Current Folder Only'),
             ),
             MenuItemButton(
               style: MenuItemButton.styleFrom(
-                foregroundColor: _playlistController.selectedFolder == 'All' ? cs.primary : Colors.white,
+                foregroundColor: _playlistController.selectedFolder == 'All'
+                    ? cs.primary
+                    : Colors.white,
               ),
               onPressed: () async {
                 await _playlistController.filterByFolder('All');
@@ -1221,8 +1444,14 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  _autoAdvance ? '${_slideshowDelaySeconds}s delay' : 'Static Mode',
-                  style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                  _autoAdvance
+                      ? '${_slideshowDelaySeconds}s delay'
+                      : 'Static Mode',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -1267,7 +1496,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                     children: [
                       Text(
                         positionStr,
-                        style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       Expanded(
                         child: SliderTheme(
@@ -1276,8 +1509,12 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                             inactiveTrackColor: Colors.white24,
                             trackHeight: 2,
                             thumbColor: cs.primary,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 5,
+                            ),
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: 10,
+                            ),
                             trackShape: const RectangularSliderTrackShape(),
                           ),
                           child: Slider(
@@ -1288,22 +1525,33 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                                 isDragging: true,
                                 sliderValue: value,
                               );
-                              final controller = _playbackManager.activeController;
+                              final controller =
+                                  _playbackManager.activeController;
                               if (controller != null) {
-                                final targetMs = (value * progress.duration.inMilliseconds).toInt();
-                                controller.seekTo(Duration(milliseconds: targetMs));
+                                final targetMs =
+                                    (value * progress.duration.inMilliseconds)
+                                        .toInt();
+                                controller.seekTo(
+                                  Duration(milliseconds: targetMs),
+                                );
                               }
                             },
                             onChangeEnd: (value) {
-                              final controller = _playbackManager.activeController;
+                              final controller =
+                                  _playbackManager.activeController;
                               if (controller != null) {
-                                final targetMs = (value * progress.duration.inMilliseconds).toInt();
-                                controller.seekTo(Duration(milliseconds: targetMs)).then((_) {
-                                  _videoProgressNotifier.value = _videoProgressNotifier.value.copyWith(
-                                    isDragging: false,
-                                  );
-                                  _startHideTimer();
-                                });
+                                final targetMs =
+                                    (value * progress.duration.inMilliseconds)
+                                        .toInt();
+                                controller
+                                    .seekTo(Duration(milliseconds: targetMs))
+                                    .then((_) {
+                                      _videoProgressNotifier.value =
+                                          _videoProgressNotifier.value.copyWith(
+                                            isDragging: false,
+                                          );
+                                      _startHideTimer();
+                                    });
                               }
                             },
                           ),
@@ -1311,7 +1559,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                       ),
                       Text(
                         durationStr,
-                        style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   );
@@ -1333,20 +1585,27 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                       padding: const EdgeInsets.all(8),
                       iconSize: 20,
                       icon: Icon(
-                        _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                        _isMuted
+                            ? Icons.volume_off_rounded
+                            : Icons.volume_up_rounded,
                         color: _isMuted ? cs.error : Colors.white70,
                       ),
                       tooltip: 'Mute',
                       onPressed: () {
                         HapticFeedback.lightImpact();
                         setState(() => _isMuted = !_isMuted);
-                        _playbackManager.activeController?.setVolume(_isMuted ? 0.0 : 1.0);
+                        _playbackManager.activeController?.setVolume(
+                          _isMuted ? 0.0 : 1.0,
+                        );
                       },
                     ),
                   ),
                   const SizedBox(width: 8),
                   _buildPillContainer(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     child: ValueListenableBuilder<VideoPlaybackProgress>(
                       valueListenable: _videoProgressNotifier,
                       builder: (context, progress, child) {
@@ -1354,7 +1613,11 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
                         final durationStr = _formatDuration(progress.duration);
                         return Text(
                           '$positionStr / $durationStr',
-                          style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
                         );
                       },
                     ),
@@ -1379,13 +1642,18 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     );
   }
 
-  Widget _buildPillContainer({required Widget child, EdgeInsetsGeometry? padding}) {
+  Widget _buildPillContainer({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+  }) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
-          padding: padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding:
+              padding ??
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.25),
             borderRadius: BorderRadius.circular(24),

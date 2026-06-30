@@ -11,7 +11,7 @@ class PlaylistController extends ChangeNotifier {
   List<String> _originalList;
   List<String> _currentPlaylist;
   int _currentIndex;
-  
+
   bool _isShuffled = false;
   bool _allFilesScanned = false;
   bool _isScanningSubfolders = false;
@@ -22,9 +22,9 @@ class PlaylistController extends ChangeNotifier {
     required List<String> initialMediaFiles,
     required int initialIndex,
     this.startingFolder,
-  })  : _originalList = List.from(initialMediaFiles),
-        _currentPlaylist = List.from(initialMediaFiles),
-        _currentIndex = initialIndex {
+  }) : _originalList = List.from(initialMediaFiles),
+       _currentPlaylist = List.from(initialMediaFiles),
+       _currentIndex = initialIndex {
     _initializeFolderFilter();
   }
 
@@ -55,7 +55,9 @@ class PlaylistController extends ChangeNotifier {
   void _initializeFolderFilter() {
     final baseDir = getBaseDir();
     final hasSubfolderItems = _originalList.any((file) {
-      final dir = file.contains('/') ? file.substring(0, file.lastIndexOf('/')) : '';
+      final dir = file.contains('/')
+          ? file.substring(0, file.lastIndexOf('/'))
+          : '';
       return dir != baseDir;
     });
     if (hasSubfolderItems) {
@@ -114,7 +116,9 @@ class PlaylistController extends ChangeNotifier {
       filteredList = List.from(_originalList);
     } else {
       filteredList = _originalList.where((file) {
-        final dir = file.contains('/') ? file.substring(0, file.lastIndexOf('/')) : '';
+        final dir = file.contains('/')
+            ? file.substring(0, file.lastIndexOf('/'))
+            : '';
         return dir == baseDir;
       }).toList();
     }
@@ -128,7 +132,10 @@ class PlaylistController extends ChangeNotifier {
     }
   }
 
-  Future<List<String>> _scanDirectoryRecursively(String baseDir, {int depth = 0}) async {
+  Future<List<String>> _scanDirectoryRecursively(
+    String baseDir, {
+    int depth = 0,
+  }) async {
     if (depth > MediaViewerConstants.maxDirectorySearchDepth) return [];
 
     final foundFiles = <String>[];
@@ -145,17 +152,21 @@ class PlaylistController extends ChangeNotifier {
             subdirNames.add(entry.name);
           } else {
             if (MediaViewerConstants.isSupported(entry.name)) {
-              final fullPath = baseDir.isEmpty ? entry.name : '$baseDir/${entry.name}';
+              final fullPath = baseDir.isEmpty
+                  ? entry.name
+                  : '$baseDir/${entry.name}';
               foundFiles.add(fullPath);
             }
           }
         }
 
         if (subdirNames.isNotEmpty) {
-          final nested = await Future.wait(subdirNames.map((name) {
-            final subPath = baseDir.isEmpty ? name : '$baseDir/$name';
-            return _scanDirectoryRecursively(subPath, depth: depth + 1);
-          }));
+          final nested = await Future.wait(
+            subdirNames.map((name) {
+              final subPath = baseDir.isEmpty ? name : '$baseDir/$name';
+              return _scanDirectoryRecursively(subPath, depth: depth + 1);
+            }),
+          );
           for (final list in nested) {
             foundFiles.addAll(list);
           }
@@ -173,7 +184,8 @@ class PlaylistController extends ChangeNotifier {
     final file = currentFile;
     _currentPlaylist.removeAt(_currentIndex);
     _originalList.remove(file);
-    if (_currentIndex >= _currentPlaylist.length && _currentPlaylist.isNotEmpty) {
+    if (_currentIndex >= _currentPlaylist.length &&
+        _currentPlaylist.isNotEmpty) {
       _currentIndex = _currentPlaylist.length - 1;
     }
     notifyListeners();
