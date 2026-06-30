@@ -24,6 +24,7 @@ class AppSettings {
   bool masterPasswordIsFingerprint;
   bool defaultDocumentProvider;
   bool videoAutoPlay;
+  bool blockScreenshots;
 
   /// App-wide default thumbnail cache mode, applied to every container whose
   /// [ContainerRecord.thumbnailCacheMode] is null.
@@ -37,6 +38,7 @@ class AppSettings {
     this.masterPasswordIsFingerprint = false,
     this.defaultDocumentProvider = false,
     this.videoAutoPlay = true,
+    this.blockScreenshots = false,
     this.defaultThumbnailCacheMode = ThumbnailCacheMode.disabled,
     String? masterPasswordHash,
     String? masterPasswordSalt,
@@ -70,6 +72,7 @@ class AppSettings {
         'masterPasswordIsFingerprint': masterPasswordIsFingerprint,
         'defaultDocumentProvider': defaultDocumentProvider,
         'videoAutoPlay': videoAutoPlay,
+        'blockScreenshots': blockScreenshots,
         'defaultThumbnailCacheMode': defaultThumbnailCacheMode.toJson(),
       };
 
@@ -80,6 +83,7 @@ class AppSettings {
       defaultDocumentProvider: j['defaultDocumentProvider'] as bool? ??
           j['mountAsDocumentProvider'] as bool? ?? false,
       videoAutoPlay: j['videoAutoPlay'] as bool? ?? true,
+      blockScreenshots: j['blockScreenshots'] as bool? ?? false,
 
       // Resolve nullable parsed mode and default to appCache if null
       defaultThumbnailCacheMode: ThumbnailCacheMode.fromJson(

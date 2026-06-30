@@ -35,4 +35,7 @@ abstract final class ChannelMethods {
   // ── Crypto ───────────────────────────────────────────────────────────────
   /// PBKDF2-SHA512 via the C++ mbedTLS layer.
   static const hashPassword = 'hashPassword';
+
+  // ── Security & Privacy ───────────────────────────────────────────────────
+  static const setSecureScreen = 'setSecureScreen';
 }

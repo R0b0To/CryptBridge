@@ -50,6 +50,7 @@ private object ChannelMethods {
     const val GET_FOLDER_SIZE = "getFolderSize"
     const val HASH_PASSWORD       = "hashPassword"
     const val WRITE_FILE_CHUNK    = "writeFileChunk"
+    const val SET_SECURE_SCREEN   = "setSecureScreen"
 }
 
 private const val MAX_CHUNK_BYTES = 64 * 1024 * 1024  // 64 MB
@@ -398,6 +399,16 @@ class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+
+                    ChannelMethods.SET_SECURE_SCREEN -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        if (enabled) {
+                            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                        } else {
+                            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                        result.success(true)
+                    }
 
                     ChannelMethods.PICK_CONTAINER -> {
                         pendingResultCheck(result)

@@ -367,6 +367,18 @@ class VaultExplorerApi {
       return null;
     }
   }
+
+  Future<bool> setSecureScreen(bool enabled) async {
+    try {
+      final bool? success = await _channel.invokeMethod<bool>(
+        ChannelMethods.setSecureScreen,
+        {'enabled': enabled},
+      );
+      return success ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 final vaultExplorerApi = VaultExplorerApi();

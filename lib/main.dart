@@ -6,11 +6,21 @@ import 'package:path_provider/path_provider.dart';
 import 'theme.dart';
 import 'screens/lock/lock_gate_screen.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:vaultexplorer/services/app_settings_service.dart';
+import 'package:vaultexplorer/services/vaultexplorer_api.dart';
 
 String appVersion = '0.0.0';
 void main() async {
   // Ensure bindings are initialised before calling path_provider.
   WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    final settings = await AppSettingsService.loadSettings();
+    if (settings.blockScreenshots) {
+      await vaultExplorerApi.setSecureScreen(true);
+    }
+  } catch (_) {}
+
   try {
     final packageInfo = await PackageInfo.fromPlatform();
     appVersion = packageInfo.version; // e.g., "0.8.10"

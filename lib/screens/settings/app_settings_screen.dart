@@ -5,6 +5,7 @@ import 'package:vaultexplorer/main.dart';
 import '../../models/thumbnail_cache_mode.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/password_hasher.dart';
+import '../../services/vaultexplorer_api.dart';
 
 class AppSettingsScreen extends StatefulWidget {
   const AppSettingsScreen({Key? key}) : super(key: key);
@@ -299,6 +300,24 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                       label: const Text('Change password'),
                     ),
                   ],
+                ]),
+
+                const SizedBox(height: 24),
+
+                _SectionLabel('PRIVACY', cs),
+                const SizedBox(height: 8),
+                _Card(cs: cs, children: [
+                  _ToggleRow(
+                    icon: Icons.security_rounded,
+                    title: 'Block Screenshots',
+                    subtitle: 'Prevent screenshots and hide content in recent apps preview.',
+                    value: _settings.blockScreenshots,
+                    cs: cs,
+                    onChanged: (v) async {
+                      setState(() => _settings.blockScreenshots = v);
+                      await vaultExplorerApi.setSecureScreen(v);
+                    },
+                  ),
                 ]),
 
                 const SizedBox(height: 24),
