@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:vaultexplorer/main.dart';
 import '../../models/thumbnail_cache_mode.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/password_hasher.dart';
@@ -350,13 +352,18 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 _SectionLabel('ABOUT', cs),
                 const SizedBox(height: 8),
                 _Card(cs: cs, children: [
-                  _InfoRow('Version',        '0.8.10',                  cs),
+                  _InfoRow('Version',        appVersion,                  cs),
                   const Divider(),
                   _InfoRow('Encryption',     'AES-256-XTS (VeraCrypt)', cs),
                   const Divider(),
                   _InfoRow('Key derivation', 'PBKDF2-SHA512',           cs),
                   const Divider(),
                   _InfoRow('Filesystem',     'FAT32 / exFAT via FatFs', cs),
+                  const Divider(),
+                  GestureDetector(
+                  onTap: () => launchUrl(Uri.parse('https://github.com/R0b0To/VaultExplorer')),
+                  child: _InfoRow('GitHub', 'https://github.com/R0b0To/VaultExplorer', cs),
+                    ),
                 ]),
 
                 const SizedBox(height: 32),

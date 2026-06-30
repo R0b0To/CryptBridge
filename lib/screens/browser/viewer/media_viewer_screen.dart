@@ -10,6 +10,7 @@ import 'playlist_controller.dart';
 import 'video_playback_manager.dart';
 import 'widgets/encrypted_image_widget.dart';
 import 'widgets/media_player_widget.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 enum VideoPlaybackMode { playOnce, loop, playAndAdvance }
 
@@ -320,7 +321,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
       } catch (_) {}
     }
     _playbackManager.activeControllerNotifier.removeListener(_onActiveVideoControllerChanged);
-
+    WakelockPlus.toggle(enable: false);
     _cancelSlideshowTimer();
     _hideTimer?.cancel();
     _pageController.dispose();
@@ -908,6 +909,7 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     } else {
       isPlayingState = _playbackManager.activeController?.value.isPlaying ?? false;
     }
+    WakelockPlus.toggle(enable: isPlayingState);
 
     return IgnorePointer(
       ignoring: !_showUI,

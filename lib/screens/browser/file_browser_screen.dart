@@ -320,6 +320,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     _signalActivity();
     if (!isSelectionMode) {
       setState(() { isSelectionMode = true; selectedItems.add(rawItem); });
+      if (selectedFolderCount > 0) {
+      fetchFolderSizes(widget.container, _currentDirPath);}
     } else {
       toggleSelectItem(rawItem);
     }

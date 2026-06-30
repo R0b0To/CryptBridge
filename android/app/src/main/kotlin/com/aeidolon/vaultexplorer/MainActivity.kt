@@ -409,18 +409,24 @@ class MainActivity : FlutterFragmentActivity() {
                     }
 
                     ChannelMethods.CREATE_CONTAINER -> {
-                        pendingResultCheck(result)
                         val name = call.argument<String>("displayName") ?: "vault.tc"
+                        val password = call.argument<String>("password")
+                        if (password == null) {
+        result.error("INVALID_ARGS", "password required", null)
+        return@setMethodCallHandler
+    }
+
                         pendingCreate = PendingCreate(
                             name        = name,
                             sizeBytes   = call.argument<Number>("sizeBytes")?.toLong() ?: 0L,
-                            password    = call.argument<String>("password") ?: run {
+                            password    = password ?: run {
                                 result.error("INVALID_ARGS", "password required", null)
                                 return@setMethodCallHandler
                             },
                             pim         = call.argument<Number>("pim")?.toInt() ?: 0,
                             fileSystem  = call.argument<String>("fileSystem") ?: "fat"
                         )
+                        pendingResultCheck(result)
                         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE)
                             type = "application/octet-stream"
@@ -922,81 +928,81 @@ class MainActivity : FlutterFragmentActivity() {
                     }
 
                     ChannelMethods.IMPORT_FILE -> {
-                        pendingResultCheck(result)
-                        val containerUri = call.argument<String>("filePath")
-                        if (containerUri == null) {
-                            result.error("INVALID_ARGS", "filePath is required", null)
-                            return@setMethodCallHandler
-                        }
-                        val volId = VeraCryptSession.getVolumeIdByUri(containerUri)
-                            ?: run {
-                                result.error("NOT_MOUNTED", "Container is not mounted", null)
-                                return@setMethodCallHandler
-                            }
-                        pendingImport = PendingImport(containerUri, call.argument<String>("targetPath") ?: "", volId)
-                        importFileLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "*/*"
-                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                        })
-                    }
+    val containerUri = call.argument<String>("filePath")
+    if (containerUri == null) {
+        result.error("INVALID_ARGS", "filePath is required", null)
+        return@setMethodCallHandler
+    }
+    val volId = VeraCryptSession.getVolumeIdByUri(containerUri)
+    if (volId == null) {
+        result.error("NOT_MOUNTED", "Container is not mounted", null)
+        return@setMethodCallHandler
+    }
+    pendingImport = PendingImport(containerUri, call.argument<String>("targetPath") ?: "", volId)
+    pendingResultCheck(result)
+    importFileLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = "*/*"
+        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+    })
+}
 
                     ChannelMethods.EXPORT_FILES_FOLDER -> {
-                        pendingResultCheck(result)
-                        val containerUri = call.argument<String>("filePath")
-                        if (containerUri == null) {
-                            result.error("INVALID_ARGS", "filePath is required", null)
-                            return@setMethodCallHandler
-                        }
-                        val volId = VeraCryptSession.getVolumeIdByUri(containerUri) ?: run {
-                            result.error("NOT_MOUNTED", "Container not mounted", null)
-                            return@setMethodCallHandler
-                        }
-                        @Suppress("UNCHECKED_CAST")
-                        val items = (call.argument<List<*>>("items"))
-                            ?.mapNotNull { it as? Map<String, Any?> } ?: emptyList()
-                        
-                        pendingExportMulti = PendingExportMulti(containerUri, items, volId)
-                        exportFilesFolderLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
-                    }
+    val containerUri = call.argument<String>("filePath")
+    if (containerUri == null) {
+        result.error("INVALID_ARGS", "filePath is required", null)
+        return@setMethodCallHandler
+    }
+    val volId = VeraCryptSession.getVolumeIdByUri(containerUri)
+    if (volId == null) {
+        result.error("NOT_MOUNTED", "Container not mounted", null)
+        return@setMethodCallHandler
+    }
+    @Suppress("UNCHECKED_CAST")
+    val items = (call.argument<List<*>>("items"))?.mapNotNull { it as? Map<String, Any?> } ?: emptyList()
+    pendingExportMulti = PendingExportMulti(containerUri, items, volId)
+    pendingResultCheck(result)   // ← moved here
+    exportFilesFolderLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+}
 
                     ChannelMethods.IMPORT_FOLDER -> {
-                        pendingResultCheck(result)
-                        val containerUri = call.argument<String>("filePath")
-                        if (containerUri == null) {
-                            result.error("INVALID_ARGS", "filePath is required", null)
-                            return@setMethodCallHandler
-                        }
-                        val volId = VeraCryptSession.getVolumeIdByUri(containerUri)
-                            ?: run {
-                                result.error("NOT_MOUNTED", "Container is not mounted", null)
-                                return@setMethodCallHandler
-                            }
-                        pendingImportFolder = PendingImportFolder(containerUri, call.argument<String>("targetPath") ?: "", volId)
-                        importFolderLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
-                    }
+    val containerUri = call.argument<String>("filePath")
+    if (containerUri == null) {
+        result.error("INVALID_ARGS", "filePath is required", null)
+        return@setMethodCallHandler
+    }
+    val volId = VeraCryptSession.getVolumeIdByUri(containerUri)
+    if (volId == null) {
+        result.error("NOT_MOUNTED", "Container is not mounted", null)
+        return@setMethodCallHandler
+    }
+    pendingImportFolder = PendingImportFolder(containerUri, call.argument<String>("targetPath") ?: "", volId)
+    pendingResultCheck(result)   // ← moved here
+    importFolderLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+}
 
                     ChannelMethods.EXPORT_FILE -> {
-                        pendingResultCheck(result)
-                        val containerUri = call.argument<String>("filePath")
-                        val sourcePath = call.argument<String>("sourcePath")
-                        if (containerUri == null || sourcePath == null) {
-                            result.error("INVALID_ARGS", "filePath and sourcePath required", null)
-                            return@setMethodCallHandler
-                        }
-                        val volId = VeraCryptSession.getVolumeIdByUri(containerUri) ?: run {
-                            result.error("NOT_MOUNTED", "Container not mounted", null)
-                            return@setMethodCallHandler
-                        }
-                        pendingExportFile = PendingExportFile(containerUri, sourcePath, volId)
-                        val fileName = sourcePath.split("/").last()
-                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = getMimeType(fileName)
-                            putExtra(Intent.EXTRA_TITLE, fileName)
-                        }
-                        exportFileLauncher.launch(intent)
-                    }
+    val containerUri = call.argument<String>("filePath")
+    val sourcePath = call.argument<String>("sourcePath")
+    if (containerUri == null || sourcePath == null) {
+        result.error("INVALID_ARGS", "filePath and sourcePath required", null)
+        return@setMethodCallHandler
+    }
+    val volId = VeraCryptSession.getVolumeIdByUri(containerUri)
+    if (volId == null) {
+        result.error("NOT_MOUNTED", "Container not mounted", null)
+        return@setMethodCallHandler
+    }
+    pendingExportFile = PendingExportFile(containerUri, sourcePath, volId)
+    pendingResultCheck(result)   // ← moved here
+    val fileName = sourcePath.split("/").last()
+    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = getMimeType(fileName)
+        putExtra(Intent.EXTRA_TITLE, fileName)
+    }
+    exportFileLauncher.launch(intent)
+}
 
                     ChannelMethods.WRITE_FILE_CHUNK -> {
                         val fileName = call.argument<String>("fileName")

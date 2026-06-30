@@ -5,11 +5,19 @@ import 'package:fvp/fvp.dart' as fvp;
 import 'package:path_provider/path_provider.dart';
 import 'theme.dart';
 import 'screens/lock/lock_gate_screen.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
+String appVersion = '0.0.0';
 void main() async {
   // Ensure bindings are initialised before calling path_provider.
   WidgetsFlutterBinding.ensureInitialized();
-
+  try {
+    final packageInfo = await PackageInfo.fromPlatform();
+    appVersion = packageInfo.version; // e.g., "0.8.10"
+  } catch (e) {
+    // Fallback if platform retrieval fails
+    appVersion = 'unknown';
+  }
   // clean up any decrypted temp files left behind by a
   // previous crash or force-kill before the copy/paste finally{} block ran.
   await _cleanupOrphanedTempFiles();
@@ -23,9 +31,11 @@ void main() async {
     return false;
   };
 
-  fvp.registerWith(options: {
-    'platforms': ['android'],
-  });
+  fvp.registerWith(
+    options: {
+      'platforms': ['android'],
+    },
+  );
 
   runApp(const VaultExplorerApp());
 }

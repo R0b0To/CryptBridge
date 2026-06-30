@@ -42,18 +42,6 @@ class FileOperationsSheet extends StatelessWidget {
 
             return Column(
               children: [
-                // ── Sheet handle ────────────────────────────────────────────
-                Container(
-                  width: 32,
-                  height: 4,
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: cs.onSurfaceVariant.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-
-                // ── Header ──────────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 8, 12),
                   child: Row(
