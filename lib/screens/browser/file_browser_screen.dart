@@ -11,6 +11,7 @@ import '../../services/vaultexplorer_api.dart';
 import '../../utils/format_utils.dart';
 import '../../utils/raw_entry.dart';
 import 'browser_dialogs.dart';
+import 'viewer/media_viewer_constants.dart';
 import 'viewer/media_viewer_screen.dart';
 import 'viewer/text_editor_screen.dart';
 import 'mixins/selection_mixin.dart';
@@ -79,9 +80,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   static const int _maxScanDepth = 20;
 
-  static const _imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
-  static const _videoExts = {'mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv'};
-  static const _audioExts = {'mp3', 'm4a', 'wav', 'flac', 'ogg', 'aac'};
+  // Document-type extensions used only by _matchesFilter; has no media
+  // equivalent in MediaViewerConstants so it stays local.
+  static const _documentExts = {
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf',
+    'csv', 'zip', 'tar', 'gz', 'json', 'xml',
+  };
 
   bool get _atRoot => _pathStack.length == 1;
   String get _currentDirPath => _pathStack.last.fatPath;
@@ -161,15 +165,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       );
       final space = await vaultExplorerApi.getSpaceInfo(widget.container);
       if (mounted) {
-    final isTruncated = items?.any((f) => f == 'System:TRUNCATED') ?? false;
-    setState(() {
-        _currentItems = items?.where(
-            (f) => !f.startsWith('System:')).toList() ?? [];
-        _isListingTruncated = isTruncated;   // new bool field
-        if (space != null && space.length > 1) _freeSpace = space[1];
-        _isLoading = false;
-    });
-}
+        setState(() {
+          _currentItems = items ?? [];
+          if (space != null && space.length > 1) _freeSpace = space[1];
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -495,8 +496,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       _openMediaViewer(fileName, fullPath);
     } else if (result == 'external') {
       if (remember) {
-        // Register a one-shot callback to capture the specific app
-        // chosen from the Android system chooser.
         VaultExplorerApi.onAppSelectedCallback = (selectedExt, pkg) {
           if (selectedExt.toLowerCase() == ext.toLowerCase()) {
             settings.extensionPreferences[ext] = 'package:$pkg';
@@ -587,12 +586,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   // ── Media helpers ─────────────────────────────────────────────────────────
 
-  bool _isSupportedMedia(String fileName) {
-    final ext = fileName.split('.').last.toLowerCase();
-    return _imageExts.contains(ext) ||
-        _videoExts.contains(ext) ||
-        _audioExts.contains(ext);
-  }
+  /// Delegates to [MediaViewerConstants] — the single source of truth for
+  /// supported media extensions across the entire viewer stack.
+  bool _isSupportedMedia(String fileName) =>
+      MediaViewerConstants.isSupported(fileName);
 
   Future<List<String>> _scanMediaRecursively(
     String dirPath, {
@@ -623,7 +620,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
               return _scanMediaRecursively(subPath, depth: depth + 1);
             }),
           );
-          for (final list in nested) foundFiles.addAll(list);
+          for (final list in nested) {
+            foundFiles.addAll(list);
+          }
         }
       }
     } catch (e) {
@@ -653,10 +652,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   // ── Clipboard init ────────────────────────────────────────────────────────
-  //
-  // Builds a typed List<ClipboardItem> from the current selection and hands
-  // it to CrossContainerClipboard. All copy/move logic lives in
-  // FileOperationService; this method only stages the data.
 
   void _initClipboard({required bool cut}) {
     _signalActivity();
@@ -682,15 +677,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     exitSelectionMode();
   }
 
-  // ── Paste — thin dispatcher ───────────────────────────────────────────────
-  //
-  // All copy/move logic has moved to FileOperationService.
-  // This method's only jobs are:
-  //   1. Validate clipboard state and resolve containers.
-  //   2. Run conflict-resolution UI (moved from _paste's inline loop).
-  //   3. Call FileOperationService.enqueue() with a ConflictPlan.
-  //   4. Attach a listener that refreshes the directory when done.
-  //   5. Clear the clipboard.
+  // ── Paste ─────────────────────────────────────────────────────────────────
 
   Future<void> _paste() async {
     if (!_clip.hasItems) return;
@@ -728,13 +715,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     final items = List<ClipboardItem>.from(_clip.items);
     final isCut = _clip.isCutOperation;
 
-    // ── Batch conflict scan ────────────────────────────────────────────────
-    //
-    // Single directory read, single pass over items. Replaces the old serial
-    // per-file AlertDialog loop — every collision is collected up front and
-    // shown to the user in one ConflictResolutionSheet instead of N modal
-    // interruptions.
-
     final existingRaw =
         await vaultExplorerApi.listDirectory(
           widget.container,
@@ -756,8 +736,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       final fileName = item.name;
       if (!existingNames.contains(fileName.toLowerCase())) continue;
 
-      // Same-container move to the exact same location — FileOperationService
-      // skips these silently; don't surface them as a conflict to resolve.
       final wouldBeSamePath =
           !isCrossContainer &&
           item.path ==
@@ -782,11 +760,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         conflicts: conflicts,
       );
       if (!mounted) return;
-      if (result == null) return; // user cancelled the whole paste
+      if (result == null) return;
       conflictPlan = result;
     }
-
-    // ── Enqueue with FileOperationService ───────────────────────────────────
 
     final op = _opSvc.enqueue(
       isCut: isCut,
@@ -799,9 +775,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
     _clip.clear();
 
-    // Live progress is shown by OperationProgressBar — this listener's only
-    // job is reloading the directory listing the instant the operation
-    // finishes (the bar itself doesn't touch directory state).
     void listener() {
       if (!mounted) {
         op.removeListener(listener);
@@ -820,8 +793,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   // ── Batch delete ──────────────────────────────────────────────────────────
-  //
-  // Delegates to FileOperationService.deleteItems().
 
   void _batchDelete() {
     HapticFeedback.heavyImpact();
@@ -844,9 +815,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         final deleted = await _opSvc.deleteItems(
           container: widget.container,
           items: clipItems,
-          onProgress: (done, total) {
-            // Progress available for Phase 2 progress sheet.
-          },
+          onProgress: (done, total) {},
         );
         failCount = clipItems.length - deleted;
 
@@ -941,32 +910,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   bool _matchesFilter(String fileName) {
     if (_currentFilter == null) return true;
-    final ext = fileName.split('.').last.toLowerCase();
     switch (_currentFilter) {
       case 'image':
-        return _imageExts.contains(ext);
+        return MediaViewerConstants.isImage(fileName);
       case 'video':
-        return _videoExts.contains(ext);
+        return MediaViewerConstants.isVideo(fileName);
       case 'audio':
-        return _audioExts.contains(ext);
+        return MediaViewerConstants.isAudio(fileName);
       case 'document':
-        return const {
-          'pdf',
-          'doc',
-          'docx',
-          'xls',
-          'xlsx',
-          'ppt',
-          'pptx',
-          'txt',
-          'rtf',
-          'csv',
-          'zip',
-          'tar',
-          'gz',
-          'json',
-          'xml',
-        }.contains(ext);
+        return _documentExts
+            .contains(fileName.split('.').last.toLowerCase());
       default:
         return true;
     }
