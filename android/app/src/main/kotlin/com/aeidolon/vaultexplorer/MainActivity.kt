@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
-import android.provider.OpenableColumns
 import androidx.annotation.NonNull
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -95,7 +94,10 @@ class MainActivity : FlutterFragmentActivity() {
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-            res.success(mapOf("uri" to uri.toString(), "displayName" to resolveDisplayName(uri)))
+            res.success(mapOf(
+                "uri" to uri.toString(),
+                "displayName" to UriNameResolver.resolve(contentResolver, uri)
+            ))
         } else {
             res.success(null)
         }
@@ -130,13 +132,7 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                     runOnUiThread { res.success(success) }
                 } catch (e: Exception) {
-                    runOnUiThread {
-                        if (isNotUnlockedException(e)) {
-                            res.error("NOT_UNLOCKED", e.message, null)
-                        } else {
-                            res.error("C++_ERROR", e.message, null)
-                        }
-                    }
+                    runOnUiThread { dispatchNativeError(e, res) }
                 }
             }.start()
         } else {
@@ -173,13 +169,7 @@ class MainActivity : FlutterFragmentActivity() {
                         }
                         runOnUiThread { res.success(successCount) }
                     } catch (e: Exception) {
-                        runOnUiThread {
-                            if (isNotUnlockedException(e)) {
-                                res.error("NOT_UNLOCKED", e.message, null)
-                            } else {
-                                res.error("C++_ERROR", e.message, null)
-                            }
-                        }
+                        runOnUiThread { dispatchNativeError(e, res) }
                     }
                 }.start()
             } else {
@@ -222,13 +212,7 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                     runOnUiThread { res.success(successCount) }
                 } catch (e: Exception) {
-                    runOnUiThread {
-                        if (isNotUnlockedException(e)) {
-                            res.error("NOT_UNLOCKED", e.message, null)
-                        } else {
-                            res.error("C++_ERROR", e.message, null)
-                        }
-                    }
+                    runOnUiThread { dispatchNativeError(e, res) }
                 }
             }.start()
         } else {
@@ -264,13 +248,7 @@ class MainActivity : FlutterFragmentActivity() {
                         val count = importEntryRecursive(srcRoot, pending.containerUri, targetFatPath, pending.volId)
                         runOnUiThread { res.success(count) }
                     } catch (e: Exception) {
-                        runOnUiThread {
-                            if (isNotUnlockedException(e)) {
-                                res.error("NOT_UNLOCKED", e.message, null)
-                            } else {
-                                res.error("C++_ERROR", e.message, null)
-                            }
-                        }
+                        runOnUiThread { dispatchNativeError(e, res) }
                     }
                 }.start()
             } else {
@@ -312,13 +290,7 @@ class MainActivity : FlutterFragmentActivity() {
                         runOnUiThread { res.success(false) }
                     }
                 } catch (e: Exception) {
-                    runOnUiThread {
-                        if (isNotUnlockedException(e)) {
-                            res.error("NOT_UNLOCKED", e.message, null)
-                        } else {
-                            res.error("C++_ERROR", e.message, null)
-                        }
-                    }
+                    runOnUiThread { dispatchNativeError(e, res) }
                 }
             }.start()
         } else {
@@ -345,20 +317,44 @@ class MainActivity : FlutterFragmentActivity() {
                 val value = synchronized(VeraCryptSession.locks[volId]) { block(volId) }
                 runOnUiThread { result.success(value) }
             } catch (e: Exception) {
-                runOnUiThread {
-                    if (isNotUnlockedException(e)) {
-                        result.error("NOT_UNLOCKED", e.message, null)
-                    } else {
-                        result.error("C++_ERROR", e.message, null)
-                    }
-                }
+                runOnUiThread { dispatchNativeError(e, result) }
             }
         }.start()
     }
 
     private fun isNotUnlockedException(e: Throwable): Boolean =
-        e is IllegalStateException && e.message?.startsWith("NOT_UNLOCKED") == true 
-   
+        e is IllegalStateException && e.message?.startsWith("NOT_UNLOCKED") == true
+
+    /**
+     * Single dispatch point for the "was this a not-unlocked error or a
+     * generic native error" decision. Previously this exact if/else block
+     * was duplicated inline across every Thread{} catch clause in this file
+     * (launchers, runNativeOp, and several channel handlers below).
+     */
+    private fun dispatchNativeError(e: Exception, result: MethodChannel.Result) {
+        if (isNotUnlockedException(e)) {
+            result.error("NOT_UNLOCKED", e.message, null)
+        } else {
+            result.error("C++_ERROR", e.message, null)
+        }
+    }
+
+    /**
+     * Shared square-target downsample calculation, previously duplicated
+     * identically in both GET_IMAGE_THUMBNAIL and GENERATE_AND_CACHE_THUMBNAIL.
+     */
+    private fun calculateInSampleSize(width: Int, height: Int, targetSize: Int): Int {
+        var inSampleSize = 1
+        if (width > targetSize || height > targetSize) {
+            val halfWidth = width / 2
+            val halfHeight = height / 2
+            while (halfWidth / inSampleSize >= targetSize && halfHeight / inSampleSize >= targetSize) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
+    }
+
     private fun scaledToFit(src: Bitmap, maxEdge: Int): Bitmap {
         val w = src.width
         val h = src.height
@@ -539,13 +535,7 @@ class MainActivity : FlutterFragmentActivity() {
                                     }
                                 }
                             } catch (e: Exception) {
-                                runOnUiThread {
-                                    if (isNotUnlockedException(e)) {
-                                        result.error("NOT_UNLOCKED", e.message, null)
-                                    } else {
-                                        result.error("C++_ERROR", e.message, null)
-                                    }
-                                }
+                                runOnUiThread { dispatchNativeError(e, result) }
                             }
                         }.start()
                     }
@@ -568,13 +558,7 @@ class MainActivity : FlutterFragmentActivity() {
                                     else result.error("KDF_FAILED", "PBKDF2 derivation failed", null)
                                 }
                             } catch (e: Exception) {
-                                runOnUiThread {
-                                    if (isNotUnlockedException(e)) {
-                                        result.error("NOT_UNLOCKED", e.message, null)
-                                    } else {
-                                        result.error("C++_ERROR", e.message, null)
-                                    }
-                                }
+                                runOnUiThread { dispatchNativeError(e, result) }
                             }
                         }.start()
                     }
@@ -634,13 +618,7 @@ class MainActivity : FlutterFragmentActivity() {
                                     runOnUiThread { result.error("UNSUPPORTED_OS", "Requires Android 6.0+", null) }
                                 }
                             } catch (e: Exception) {
-                                runOnUiThread {
-                                    if (isNotUnlockedException(e)) {
-                                        result.error("NOT_UNLOCKED", e.message, null)
-                                    } else {
-                                        result.error("C++_ERROR", e.message, null)
-                                    }
-                                }
+                                runOnUiThread { dispatchNativeError(e, result) }
                             } finally {
                                 runCatching { retriever?.release() }
                             }
@@ -676,14 +654,7 @@ class MainActivity : FlutterFragmentActivity() {
                                 val width = options.outWidth
                                 val height = options.outHeight
 
-                                var inSampleSize = 1
-                                if (width > targetSize || height > targetSize) {
-                                    val halfWidth = width / 2
-                                    val halfHeight = height / 2
-                                    while (halfWidth / inSampleSize >= targetSize && halfHeight / inSampleSize >= targetSize) {
-                                        inSampleSize *= 2
-                                    }
-                                }
+                                val inSampleSize = calculateInSampleSize(width, height, targetSize)
 
                                 val decodeOptions = BitmapFactory.Options().apply {
                                     this.inSampleSize = inSampleSize
@@ -705,13 +676,7 @@ class MainActivity : FlutterFragmentActivity() {
                                     runOnUiThread { result.error("DECODE_FAILED", "Failed to decode image bytes", null) }
                                 }
                             } catch (e: Exception) {
-                                runOnUiThread {
-                                    if (isNotUnlockedException(e)) {
-                                        result.error("NOT_UNLOCKED", e.message, null)
-                                    } else {
-                                        result.error("C++_ERROR", e.message, null)
-                                    }
-                                }
+                                runOnUiThread { dispatchNativeError(e, result) }
                             }
                         }.start()
                     }
@@ -741,14 +706,7 @@ class MainActivity : FlutterFragmentActivity() {
                                 val width = options.outWidth
                                 val height = options.outHeight
 
-                                var inSampleSize = 1
-                                if (width > targetSize || height > targetSize) {
-                                    val halfWidth = width / 2
-                                    val halfHeight = height / 2
-                                    while (halfWidth / inSampleSize >= targetSize && halfHeight / inSampleSize >= targetSize) {
-                                        inSampleSize *= 2
-                                    }
-                                }
+                                val inSampleSize = calculateInSampleSize(width, height, targetSize)
 
                                 val decodeOptions = BitmapFactory.Options().apply {
                                     this.inSampleSize = inSampleSize
@@ -820,13 +778,7 @@ class MainActivity : FlutterFragmentActivity() {
                                         result.success(true)
                                     }
                                 } catch (e: Exception) {
-                                    runOnUiThread {
-                                        if (isNotUnlockedException(e)) {
-                                            result.error("NOT_UNLOCKED", e.message, null)
-                                        } else {
-                                            result.error("C++_ERROR", e.message, null)
-                                        }
-                                    }
+                                    runOnUiThread { dispatchNativeError(e, result) }
                                 }
                             }.start()
                         } else {
@@ -976,7 +928,7 @@ class MainActivity : FlutterFragmentActivity() {
                             val docUri = DocumentsContract.buildDocumentUri(
                                 "com.aeidolon.vaultexplorer.documents", "$volId:file:$fileName")
                             val intent = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(docUri, getMimeType(fileName))
+                                setDataAndType(docUri, MimeTypeHelper.getMimeType(fileName))
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
                                          Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                                 if (!packageName.isNullOrEmpty()) {
@@ -1094,7 +1046,7 @@ class MainActivity : FlutterFragmentActivity() {
                         val fileName = sourcePath.split("/").last()
                         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE)
-                            type = getMimeType(fileName)
+                            type = MimeTypeHelper.getMimeType(fileName)
                             putExtra(Intent.EXTRA_TITLE, fileName)
                         }
                         exportFileLauncher.launch(intent)
@@ -1126,18 +1078,6 @@ class MainActivity : FlutterFragmentActivity() {
         pendingFlutterResult = result
     }
 
-    private fun resolveDisplayName(uri: Uri): String {
-        return try {
-            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME),
-                null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx != -1) cursor.getString(idx) else null
-                } else null
-            } ?: uri.lastPathSegment ?: "Container"
-        } catch (e: Exception) { uri.lastPathSegment ?: "Container" }
-    }
-
     private fun exportEntryRecursive(
         destParent: DocumentFile, fatPath: String, isDir: Boolean,
         containerUri: String, volId: Int
@@ -1150,7 +1090,7 @@ class MainActivity : FlutterFragmentActivity() {
                 var written = 0
                 if (ok && tempFile.exists()) {
                     destParent.findFile(name)?.delete()
-                    val outDoc = destParent.createFile(getMimeType(name), name)
+                    val outDoc = destParent.createFile(MimeTypeHelper.getMimeType(name), name)
                     if (outDoc != null) {
                         contentResolver.openOutputStream(outDoc.uri)?.use { out ->
                             tempFile.inputStream().use { it.copyTo(out) }
@@ -1196,8 +1136,6 @@ class MainActivity : FlutterFragmentActivity() {
             if (ok) 1 else 0
         } catch (_: Exception) { 0 }
     }
-
-    private fun getMimeType(fileName: String): String = MimeTypeHelper.getMimeType(fileName)
 }
 
 // ── VeraCryptInputStream (Optimized Subsampled Native Image Stream) ─────────────

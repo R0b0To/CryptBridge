@@ -60,7 +60,8 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
 
         val cursor = MatrixCursor(projection ?: defaultRootProjection)
         for ((volId, session) in VeraCryptSession.activeSessions.filter { it.value.documentProvider }) {
-            val rootTitle = session.displayName ?: getFileNameFromUri(session.uri)
+            val rootTitle = session.displayName
+                ?: UriNameResolver.resolve(context?.contentResolver, Uri.parse(session.uri))
             val (totalBytes, freeBytes) = VeraCryptBridge.getSpacePair(volId)
             val rootSummary = if (totalBytes > 0)
                 "Volume — ${android.text.format.Formatter.formatFileSize(context, freeBytes)} free"
@@ -445,26 +446,4 @@ class VeraCryptDocumentsProvider : DocumentsProvider() {
         }
         return inSampleSize
     }
-
-    private fun getFileNameFromUri(uriString: String): String {
-        val uri = Uri.parse(uriString)
-        if (uri.scheme == "content") {
-            try {
-                context?.contentResolver?.query(
-                    uri,
-                    arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-                    null, null, null
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val idx = cursor.getColumnIndex(
-                            android.provider.OpenableColumns.DISPLAY_NAME)
-                        if (idx != -1) return cursor.getString(idx)
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-        return uri.lastPathSegment?.substringAfterLast('/') ?: "Container"
-    }
-
-    private fun getMimeType(fileName: String): String = MimeTypeHelper.getMimeType(fileName)
 }
