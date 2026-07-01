@@ -165,12 +165,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       );
       final space = await vaultExplorerApi.getSpaceInfo(widget.container);
       if (mounted) {
-        setState(() {
-          _currentItems = items ?? [];
-          if (space != null && space.length > 1) _freeSpace = space[1];
-          _isLoading = false;
-        });
-      }
+    final isTruncated = items?.any((f) => f == 'System:TRUNCATED') ?? false;
+    setState(() {
+        _currentItems = items?.where(
+            (f) => !f.startsWith('System:')).toList() ?? [];
+        _isListingTruncated = isTruncated;   // new bool field
+        if (space != null && space.length > 1) _freeSpace = space[1];
+        _isLoading = false;
+    });
+}
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
