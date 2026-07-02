@@ -4,12 +4,93 @@ import '../../../models/mounted_container.dart';
 import '../../../services/vaultexplorer_api.dart';
 import '../../../utils/format_utils.dart';
 
+// ── Base Container Card (Internal) ──────────────────────────────────────────
+
+class _BaseContainerCard extends StatelessWidget {
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBackgroundColor;
+  final String title;
+  final Widget subtitle;
+  final Widget trailingAction;
+  final Widget? bottomContent;
+
+  const _BaseContainerCard({
+    required this.onTap,
+    this.onLongPress,
+    required this.icon,
+    required this.iconColor,
+    required this.iconBackgroundColor,
+    required this.title,
+    required this.subtitle,
+    required this.trailingAction,
+    this.bottomContent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: iconBackgroundColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, size: 24, color: iconColor),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        subtitle,
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  trailingAction,
+                ],
+              ),
+              if (bottomContent != null) ...[
+                const SizedBox(height: 16),
+                bottomContent!,
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Mounted container card ────────────────────────────────────────────────────
 
 class ContainerCard extends StatelessWidget {
   final MountedContainer container;
   final ValueChanged<int> onLocked;
-  final VoidCallback onReturn;
   final VoidCallback? onLongPress;
   final VoidCallback onBrowse;
 
@@ -17,7 +98,6 @@ class ContainerCard extends StatelessWidget {
     super.key,
     required this.container,
     required this.onLocked,
-    required this.onReturn,
     required this.onBrowse,
     this.onLongPress,
   });
@@ -38,96 +118,44 @@ class ContainerCard extends StatelessWidget {
         : 0.0;
     final hasSpace = container.totalSpace > 0;
 
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onBrowse,
-        onLongPress: onLongPress,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: cs.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.folder_zip_outlined,
-                      size: 20,
-                      color: cs.onPrimaryContainer,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          container.displayName,
-                          style: textTheme.titleMedium,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          hasSpace
-                              ? '${formatBytes(container.freeSpace)} free'
-                                    ' of ${formatBytes(container.totalSpace)}'
-                              : 'Vol ${container.volId} · mounted',
-                          style: textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  _LockButton(container: container, onLocked: onLocked),
-                ],
-              ),
-              if (hasSpace) ...[
-                const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(100),
-                  child: LinearProgressIndicator(
-                    value: usedFraction,
-                    minHeight: 4,
-                    backgroundColor: cs.surfaceContainerHighest,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      _barColor(usedFraction, cs),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Icon(Icons.arrow_forward, size: 14, color: cs.primary),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Browse',
-                    style: textTheme.labelLarge?.copyWith(
-                      color: cs.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (onLongPress != null)
-                    Text(
-                      'Hold to configure',
-                      style: textTheme.bodySmall?.copyWith(
-                        fontSize: 10,
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
-                      ),
-                    ),
-                ],
-              ),
-            ],
+    return _BaseContainerCard(
+      onTap: onBrowse,
+      onLongPress: onLongPress,
+      icon: Icons.folder_zip_outlined,
+      iconColor: cs.onPrimaryContainer,
+      iconBackgroundColor: cs.primaryContainer,
+      title: container.displayName,
+      subtitle: Row(
+        children: [
+          // STATUS: Currently Unlocked/Mounted
+          Icon(Icons.lock_open, size: 14, color: cs.primary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              hasSpace
+                  ? '${formatBytes(container.freeSpace)} free of ${formatBytes(container.totalSpace)}'
+                  : 'Vol ${container.volId} · Mounted',
+              style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
+        ],
       ),
+      // ACTION: Tap to Lock
+      trailingAction: _LockButton(container: container, onLocked: onLocked),
+      bottomContent: hasSpace
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(100),
+              child: LinearProgressIndicator(
+                value: usedFraction,
+                minHeight: 4,
+                backgroundColor: cs.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  _barColor(usedFraction, cs),
+                ),
+              ),
+            )
+          : null,
     );
   }
 }
@@ -185,11 +213,15 @@ class _LockButtonState extends State<_LockButton> {
       tooltip: 'Lock container',
       icon: _loading
           ? SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2, color: cs.error),
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: cs.error,
+              ),
             )
-          : Icon(Icons.lock_outline, size: 20, color: cs.error),
+          // ACTION ICON: Represents what happens when tapped (it locks)
+          : Icon(Icons.lock_outline, size: 24, color: cs.error),
     );
   }
 }
@@ -201,14 +233,12 @@ class SavedContainerCard extends StatelessWidget {
   final String uri;
   final VoidCallback onUnlock;
   final VoidCallback? onLongPress;
-  final VoidCallback onForget;
 
   const SavedContainerCard({
     super.key,
     required this.name,
     required this.uri,
     required this.onUnlock,
-    required this.onForget,
     this.onLongPress,
   });
 
@@ -217,58 +247,31 @@ class SavedContainerCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onUnlock,
-        onLongPress: onLongPress,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.folder_zip_outlined,
-                  size: 20,
-                  color: cs.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: textTheme.titleMedium,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Icon(Icons.lock, size: 12, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Locked',
-                          style: textTheme.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.lock_open_outlined, color: cs.primary),
-            ],
+    return _BaseContainerCard(
+      onTap: onUnlock,
+      onLongPress: onLongPress,
+      icon: Icons.folder_zip_outlined,
+      iconColor: cs.onSurfaceVariant,
+      iconBackgroundColor: cs.surfaceContainerHighest,
+      title: name,
+      subtitle: Row(
+        children: [
+          // STATUS: Currently Locked
+          Icon(Icons.lock, size: 14, color: cs.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text(
+            'Locked',
+            style: textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
           ),
-        ),
+        ],
+      ),
+      // ACTION ICON: Represents what happens when tapped (it unlocks)
+      trailingAction: IconButton(
+        icon: Icon(Icons.lock_open_outlined, color: cs.primary),
+        tooltip: 'Unlock container',
+        onPressed: onUnlock,
       ),
     );
   }

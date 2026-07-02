@@ -109,7 +109,7 @@ class _VaultDashboardState extends State<VaultDashboard>
 
   void _onUserActivityForContainer(int volId) {
     final idx = _mounted.indexWhere((c) => c.volId == volId);
-    if (idx == -1) return; // Container already unmounted — no-op
+    if (idx == -1) return;
     final container = _mounted[idx];
     final record = _records[container.uri];
     if ((record?.autoCloseMins ?? 0) > 0) {
@@ -172,7 +172,7 @@ class _VaultDashboardState extends State<VaultDashboard>
     } catch (_) {}
   }
 
-  // ── Unlock ────────────────────────────────────────────────────────────────
+  // ── Unlock & Create Actions ───────────────────────────────────────────────
 
   Future<void> _showUnlockSheet({String? uri, String? name}) async {
     if (_actionInFlight) return;
@@ -181,9 +181,6 @@ class _VaultDashboardState extends State<VaultDashboard>
     String? rememberedPassword;
     if (uri != null) {
       final record = _records[uri];
-      // Only prefill the password for the simple "rememberPassword" method.
-      // Biometric and pattern methods handle password retrieval internally
-      // after the user authenticates.
       if (record?.unlockMethod == ContainerUnlockMethod.rememberPassword) {
         rememberedPassword = await ContainerRepository.instance.getPassword(
           uri,
@@ -223,6 +220,82 @@ class _VaultDashboardState extends State<VaultDashboard>
     ).whenComplete(() {
       if (mounted) setState(() => _actionInFlight = false);
     });
+  }
+
+  /// Modern MD3 Creation Bottom Sheet triggered by the Floating Action Button
+  void _showAddContainerMenu() {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        final textTheme = Theme.of(context).textTheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    'Add Container',
+                    style: textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: cs.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.lock_open_rounded,
+                      color: cs.onPrimaryContainer,
+                    ),
+                  ),
+                  title: const Text('Mount Existing Container'),
+                  subtitle: const Text('Unlock an encrypted vault from storage'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showUnlockSheet();
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: cs.secondaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.add_box_rounded,
+                      color: cs.onSecondaryContainer,
+                    ),
+                  ),
+                  title: const Text('Create New Container'),
+                  subtitle: const Text('Generate a new encrypted volume'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showCreateSheet();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _showContainerConfig({
@@ -341,13 +414,26 @@ class _VaultDashboardState extends State<VaultDashboard>
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock_outline, size: 20, color: cs.primary),
-            const SizedBox(width: 8),
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: cs.outlineVariant.withValues(alpha: 0)),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(15),
+                      child: Image.asset(
+                        'assets/images/app_icon.png',
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+            const SizedBox(width: 12),
             Text(
-              'vaultexplorer',
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.1,
+              'Vault Explorer',
+              style: textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],
@@ -364,43 +450,18 @@ class _VaultDashboardState extends State<VaultDashboard>
               _loadAll();
             },
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'mount') _showUnlockSheet();
-                if (value == 'create') _showCreateSheet();
-              },
-              icon: const Icon(Icons.add),
-              tooltip: 'Container options',
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'mount',
-                  child: Row(
-                    children: [
-                      Icon(Icons.lock_open, size: 18, color: cs.primary),
-                      const SizedBox(width: 12),
-                      const Text('Mount container'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'create',
-                  child: Row(
-                    children: [
-                      Icon(Icons.add_box_outlined, size: 18, color: cs.primary),
-                      const SizedBox(width: 12),
-                      const Text('Create container'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          const SizedBox(width: 4),
         ],
+      ),
+      // MD3 Standard: Primary constructive screen actions belong in a FAB
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddContainerMenu,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Add Vault'),
       ),
       body: Column(
         children: [
+          // Floating Tonal Card aesthetic for contextual clipboard prompt
           if (clipboard.hasItems)
             _ClipboardStatusStrip(
               clipboard: clipboard,
@@ -410,16 +471,16 @@ class _VaultDashboardState extends State<VaultDashboard>
             child: displayItems.isEmpty
                 ? EmptyState(onAdd: () => _showUnlockSheet())
                 : ListView.separated(
-                    padding: const EdgeInsets.all(16),
+                    // Extra bottom padding ensures scrolling above the FAB & system nav bars
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
                     itemCount: displayItems.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (_, i) {
                       final item = displayItems[i];
                       if (item is MountedContainer) {
                         return ContainerCard(
                           container: item,
                           onLocked: _onContainerLocked,
-                          onReturn: () => _refreshContainerSpace(item.volId),
                           onBrowse: () => _openBrowser(item),
                           onLongPress: () => _showContainerConfig(
                             uri: item.uri,
@@ -441,8 +502,6 @@ class _VaultDashboardState extends State<VaultDashboard>
                             uri: record.uri,
                             currentLabel: record.label,
                           ),
-                          onForget: () =>
-                              _forgetContainer(record.uri, record.label),
                         );
                       }
                     },
@@ -454,7 +513,7 @@ class _VaultDashboardState extends State<VaultDashboard>
   }
 }
 
-// ── Clipboard status strip ────────────────────────────────────────────────────
+// ── Restyled Clipboard status strip (MD3 Floating Contextual Card) ───────────
 
 class _ClipboardStatusStrip extends StatelessWidget {
   final CrossContainerClipboard clipboard;
@@ -466,50 +525,67 @@ class _ClipboardStatusStrip extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      color: cs.primaryContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Icon(
-            clipboard.isCutOperation ? Icons.cut : Icons.copy,
-            size: 18,
-            color: cs.onPrimaryContainer,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  clipboard.summary,
-                  style: textTheme.labelLarge?.copyWith(
-                    color: cs.onPrimaryContainer,
-                    fontWeight: FontWeight.w600,
-                  ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Card(
+        color: cs.tertiaryContainer,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: cs.onTertiaryContainer.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'Open a container and tap "Paste Here"',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: cs.onPrimaryContainer.withValues(alpha: 0.8),
-                  ),
+                child: Icon(
+                  clipboard.isCutOperation ? Icons.cut_rounded : Icons.copy_rounded,
+                  size: 20,
+                  color: cs.onTertiaryContainer,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      clipboard.summary,
+                      style: textTheme.titleSmall?.copyWith(
+                        color: cs.onTertiaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Open a container and tap "Paste Here"',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: cs.onTertiaryContainer.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.tonal(
+                onPressed: onClear,
+                style: FilledButton.styleFrom(
+                  backgroundColor: cs.onTertiaryContainer.withValues(alpha: 0.12),
+                  foregroundColor: cs.onTertiaryContainer,
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text('Cancel'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: onClear,
-            style: TextButton.styleFrom(
-              foregroundColor: cs.onPrimaryContainer,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text('Cancel'),
-          ),
-        ],
+        ),
       ),
     );
   }
