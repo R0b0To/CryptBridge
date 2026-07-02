@@ -399,7 +399,6 @@ class _VaultDashboardState extends State<VaultDashboard>
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final clipboard = CrossContainerClipboard.instance;
 
     final displayItems = <dynamic>[];
     displayItems.addAll(_mounted);
@@ -414,21 +413,21 @@ class _VaultDashboardState extends State<VaultDashboard>
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: cs.outlineVariant.withValues(alpha: 0)),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: Image.asset(
-                        'assets/images/app_icon.png',
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                  ),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: cs.outlineVariant.withValues(alpha: 0)),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: Image.asset(
+                  'assets/images/app_icon.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
             const SizedBox(width: 12),
             Text(
               'Vault Explorer',
@@ -453,25 +452,20 @@ class _VaultDashboardState extends State<VaultDashboard>
           const SizedBox(width: 4),
         ],
       ),
-      // MD3 Standard: Primary constructive screen actions belong in a FAB
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddContainerMenu,
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add Vault'),
       ),
-      body: Column(
+      
+      // --- UPDATED BODY WITH STACK & LISTENABLE BUILDER ---
+      body: Stack(
         children: [
-          // Floating Tonal Card aesthetic for contextual clipboard prompt
-          if (clipboard.hasItems)
-            _ClipboardStatusStrip(
-              clipboard: clipboard,
-              onClear: () => setState(() => clipboard.clear()),
-            ),
-          Expanded(
+          // 1. The main list (fills the background)
+          Positioned.fill(
             child: displayItems.isEmpty
                 ? EmptyState(onAdd: () => _showUnlockSheet())
                 : ListView.separated(
-                    // Extra bottom padding ensures scrolling above the FAB & system nav bars
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
                     itemCount: displayItems.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -507,81 +501,111 @@ class _VaultDashboardState extends State<VaultDashboard>
                     },
                   ),
           ),
+          
+          // 2. The Floating Clipboard Pill
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 88, // Sits cleanly above the Floating Action Button
+            child: Center(
+              child: ListenableBuilder(
+                listenable: CrossContainerClipboard.instance,
+                builder: (context, _) {
+                  final clipboard = CrossContainerClipboard.instance;
+                  if (!clipboard.hasItems) return const SizedBox.shrink();
+                  
+                  return _FloatingClipboardDashboardBanner(
+                    clipboard: clipboard,
+                    onClear: clipboard.clear,
+                  );
+                },
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-// ── Restyled Clipboard status strip (MD3 Floating Contextual Card) ───────────
+// ── Floating Clipboard Banner for Dashboard (MD3 Pill) ──────────────────────
 
-class _ClipboardStatusStrip extends StatelessWidget {
+class _FloatingClipboardDashboardBanner extends StatelessWidget {
   final CrossContainerClipboard clipboard;
   final VoidCallback onClear;
-  const _ClipboardStatusStrip({required this.clipboard, required this.onClear});
+  
+  const _FloatingClipboardDashboardBanner({
+    required this.clipboard,
+    required this.onClear,
+  });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Card(
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Material(
         color: cs.tertiaryContainer,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        elevation: 6,
+        shadowColor: cs.shadow.withValues(alpha: 0.4),
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
+            mainAxisSize: MainAxisSize.min, // Shrink-wrap to content width
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: cs.onTertiaryContainer.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  clipboard.isCutOperation ? Icons.cut_rounded : Icons.copy_rounded,
-                  size: 20,
-                  color: cs.onTertiaryContainer,
-                ),
+              Icon(
+                clipboard.isCutOperation ? Icons.cut_rounded : Icons.copy_rounded,
+                size: 20,
+                color: cs.onTertiaryContainer,
               ),
-              const SizedBox(width: 14),
-              Expanded(
+              const SizedBox(width: 12),
+              Flexible(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       clipboard.summary,
-                      style: textTheme.titleSmall?.copyWith(
+                      style: textTheme.labelLarge?.copyWith(
                         color: cs.onTertiaryContainer,
                         fontWeight: FontWeight.w600,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 2),
                     Text(
-                      'Open a container and tap "Paste Here"',
-                      style: textTheme.bodySmall?.copyWith(
+                      'Open a container to paste',
+                      style: textTheme.labelSmall?.copyWith(
                         color: cs.onTertiaryContainer.withValues(alpha: 0.8),
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              FilledButton.tonal(
-                onPressed: onClear,
-                style: FilledButton.styleFrom(
-                  backgroundColor: cs.onTertiaryContainer.withValues(alpha: 0.12),
-                  foregroundColor: cs.onTertiaryContainer,
-                  visualDensity: VisualDensity.compact,
+              const SizedBox(width: 12),
+              Container(
+                width: 1,
+                height: 24,
+                color: cs.onTertiaryContainer.withValues(alpha: 0.2),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 20,
+                  color: cs.onTertiaryContainer,
                 ),
-                child: const Text('Cancel'),
+                tooltip: 'Cancel',
+                onPressed: onClear,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                padding: EdgeInsets.zero,
               ),
             ],
           ),

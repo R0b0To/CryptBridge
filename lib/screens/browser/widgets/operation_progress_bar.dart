@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../models/file_operation.dart';
 import 'file_operations_sheet.dart';
+import 'dart:async';
 
 /// Persistent transfer progress bar that sits at the bottom of the screen body.
 ///
@@ -41,6 +42,9 @@ class _OperationProgressBarState extends State<OperationProgressBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fade;
+  
+  Timer? _hideTimer;
+  static const _kLingerDuration = Duration(seconds: 4); // The missing constant
 
   @override
   void initState() {
@@ -57,6 +61,7 @@ class _OperationProgressBarState extends State<OperationProgressBar>
   @override
   void dispose() {
     FileOperationService.instance.removeListener(_onServiceChanged);
+    _hideTimer?.cancel(); // Clean up the timer
     _fadeCtrl.dispose();
     super.dispose();
   }
@@ -65,10 +70,30 @@ class _OperationProgressBarState extends State<OperationProgressBar>
 
   void _sync() {
     final svc = FileOperationService.instance;
-    // Visible when any operation exists (active or recently finished).
     final visible = svc.operations.isNotEmpty;
+
+    // Always reset the timer when state changes
+    _hideTimer?.cancel();
+
     if (visible) {
       _fadeCtrl.forward();
+      
+      // If there are no active operations left, handle cleanup
+      if (svc.activeCount == 0) {
+        // Optional: Check if there are any errors. If so, leave the bar open 
+        // so the user notices the failure. They can manually dismiss it.
+        final hasErrors = svc.operations.any((op) => 
+            op.status == FileOperationStatus.failed ||
+            op.status == FileOperationStatus.diskFull ||
+            op.status == FileOperationStatus.completedWithErrors);
+
+        if (!hasErrors) {
+          // Auto-hide successfully completed operations
+          _hideTimer = Timer(_kLingerDuration, () {
+            svc.clearFinished();
+          });
+        }
+      }
     } else {
       _fadeCtrl.reverse();
     }
@@ -225,11 +250,31 @@ class _ProgressBarSurface extends StatelessWidget {
                       ),
 
                       // Chevron
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        size: 18,
-                        color: subColor,
-                      ),
+                     if (hasActive)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: subColor,
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          color: subColor,
+                          tooltip: 'Dismiss',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
+                          onPressed: () {
+                            // Instantly clear finished ops without opening the sheet
+                            FileOperationService.instance.clearFinished();
+                          },
+                        ),
                     ],
                   ),
                 ),

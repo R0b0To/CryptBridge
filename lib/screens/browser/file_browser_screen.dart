@@ -1002,7 +1002,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
-  @override
+ @override
   Widget build(BuildContext context) {
     final dirs = _currentItems.where((f) => f.startsWith('[DIR]')).toList()
       ..sort(compareItems);
@@ -1051,11 +1051,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       },
       child: Scaffold(
         appBar: _buildAppBar(context, filteredDirs, filteredFiles),
-        body: Column(
-          children: [
-            BreadcrumbBar(stack: _pathStack, onTap: _jumpTo),
-            if (_clip.hasItems)
-              ClipboardBanner(
+        
+        // --- ADDED THIS FOR THE FLOATING BANNER ---
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+        floatingActionButton: _clip.hasItems
+            ? ClipboardBanner(
                 isCutOperation: _clip.isCutOperation,
                 itemCount: _clip.items.length,
                 sourceLabel: _clip.isFromVolume(widget.container.volId)
@@ -1063,7 +1063,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                     : _clip.sourceDisplayName,
                 onCancel: () => setState(() => _clip.clear()),
                 onPaste: _paste,
-              ),
+              )
+            : null,
+            
+        body: Column(
+          children: [
+            BreadcrumbBar(stack: _pathStack, onTap: _jumpTo),
+            // REMOVED: ClipboardBanner was previously here, causing the layout shift.
             _StatsBar(
               dirCount: filteredDirs.length,
               fileCount: filteredFiles.length,
