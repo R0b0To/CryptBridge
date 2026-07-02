@@ -35,7 +35,7 @@
 / Drive/Volume Configurations
 /---------------------------------------------------------------------------*/
 
-#define FF_VOLUMES      8     /* 4 slots) */
+#define FF_VOLUMES      8     /* 8 slots */
 #define FF_STR_VOLUME_ID 0     /* Use simple 0-based drive numbers */
 #define FF_MULTI_PARTITION 0   /* 0: Single partition drives */
 #define FF_MIN_SS       512    /* Minimum sector size */
